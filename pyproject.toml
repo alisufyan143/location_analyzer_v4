@@ -1,0 +1,99 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "location-analyzer"
+version = "2.0.0"
+description = "Production-grade UK postcode location analysis with demographic scraping, ML predictions, and interactive dashboards"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Ali Sufyan", email = "alisufyan3333@gmail.com"},
+]
+
+dependencies = [
+    # API
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+    "jinja2",
+    
+    # Database
+    "sqlalchemy",
+    "alembic",
+    "psycopg2-binary",
+    "aiosqlite",
+    
+    # Web Scraping
+    "selenium",
+    "undetected-chromedriver",
+    "seleniumbase",
+    "playwright",
+    "beautifulsoup4",
+    "requests",
+    "fake-useragent",
+    "webdriver-manager",
+    
+    # Data Processing
+    "pandas",
+    "openpyxl",
+    "numpy",
+    
+    # ML
+    "xgboost",
+    "lightgbm",
+    "scikit-learn",
+    "statsmodels",
+    "joblib",
+    "optuna",
+    
+    # Visualization
+    "bokeh",
+    "matplotlib",
+    "seaborn",
+    
+    # Config & Logging
+    "pydantic",
+    "pydantic-settings",
+    "python-dotenv",
+    
+    # Utilities
+    "nest-asyncio",
+    "pyngrok",
+    "filelock",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "httpx",
+    "ruff",
+    "mypy",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "live: marks tests that hit live websites (deselect with '-m \"not live\"')",
+]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
