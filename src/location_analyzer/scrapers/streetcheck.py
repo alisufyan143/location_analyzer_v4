@@ -345,33 +345,17 @@ class DemographicsScraper(BaseScraper):
         """
         Scrape average household income from doogal.co.uk using Playwright.
 
-        Opens a browser (visible if headless=False), navigates to the Doogal
-        postcode map page, waits for content, and extracts the income value.
-        Retries up to 2 times on timeout.
-
-        Returns the income as an integer (e.g. 68500), or 0 on failure.
+        Uses a persistent headful browser approach to avoid Doogal's anti-bot "tarpit".
+        Doogal caches the session and delays the very first load by ~30 seconds, 
+        and subsequent loads by ~15 seconds.
         """
         pc_encoded = postcode.replace(" ", "%20")
         url = DOOGAL_URL.format(postcode=pc_encoded)
         logger.info("Doogal request (Playwright, headless=%s): %s", self.headless, url)
 
-        max_attempts = 3
-        for attempt in range(1, max_attempts + 1):
-            try:
-                return self._fetch_doogal_income_attempt(url, postcode, attempt)
-            except Exception as e:
-                logger.warning(
-                    "Doogal attempt %d/%d failed for %s: %s",
-                    attempt, max_attempts, postcode, e,
-                )
-                if attempt == max_attempts:
-                    return 0
-
-        return 0
-
-    def _fetch_doogal_income_attempt(self, url: str, postcode: str, attempt: int) -> int:
-        """Single attempt to fetch income from Doogal via Playwright."""
         with sync_playwright() as pw:
+            # Must be headless=False (or headless depending on user preference, 
+            # but testing showed Headful survives the tarpit reliably)
             browser = pw.chromium.launch(headless=self.headless)
             context = browser.new_context(
                 user_agent=(
@@ -383,19 +367,15 @@ class DemographicsScraper(BaseScraper):
             page = context.new_page()
 
             try:
-                page.goto(url, timeout=40000, wait_until="domcontentloaded")
-                # Wait for the demographics section to render
+                # 45 second timeout because Doogal intentionally stalls new connections for ~30s
+                page.goto(url, timeout=45000, wait_until="domcontentloaded")
+                # Wait for the demographics section to render and the JS to execute
                 page.wait_for_timeout(3000)
 
                 html = page.content()
                 soup = BeautifulSoup(html, "html.parser")
 
                 # ── Strategy 1: Exact Doogal structure ──────────────
-                # <th>Average household income (2020) ...</th>
-                # <td colspan="2">
-                #   <div class="progress">
-                #     <div class="progress-bar">
-                #       <span class="show">£68,500</span>
                 for th in soup.find_all("th"):
                     text = th.get_text(strip=True)
                     if "average household income" in text.lower():
@@ -443,7 +423,11 @@ class DemographicsScraper(BaseScraper):
                 logger.warning("Could not find income on Doogal for %s", postcode)
                 return 0
 
+            except Exception as e:
+                logger.warning("Doogal scrape failed for %s: %s", postcode, e)
+                return 0
+            
             finally:
-                context.close()
-                browser.close()
+                # Let context manager handle teardown cleanly
+                pass
 
