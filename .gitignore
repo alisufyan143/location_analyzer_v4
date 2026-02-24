@@ -216,5 +216,3 @@ pytest_error.txt
 models/*.pkl
 THING TO INCLUDE !!!!
 
-# Ignore all .pkl files
-*.pkl
