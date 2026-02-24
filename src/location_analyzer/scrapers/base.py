@@ -129,10 +129,6 @@ class BaseScraper(abc.ABC):
             "Connection": "keep-alive",
             "DNT": "1",
         })
-        # Apply proxy if configured
-        if settings.scraper.proxies:
-            proxy = random.choice(settings.scraper.proxies)
-            self.session.proxies = {"http": proxy, "https": proxy}
 
     def retry_request(
         self,
@@ -233,11 +229,6 @@ class BaseScraper(abc.ABC):
             options.add_argument("--disable-gpu")
             options.add_argument("--window-size=1920,1080")
             options.add_argument(f"--user-agent={self._ua.random}")
-
-            # Proxy support
-            if settings.scraper.proxies:
-                proxy = random.choice(settings.scraper.proxies)
-                options.add_argument(f"--proxy-server={proxy}")
 
             # Auto-detect installed Chrome version to prevent mismatch
             chrome_version = self._detect_chrome_version()

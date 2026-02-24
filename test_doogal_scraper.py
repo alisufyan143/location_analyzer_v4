@@ -87,8 +87,8 @@ def run_tests():
             # Spawn a new tab in the same browser context
             page = context.new_page()
             try:
-                page.goto(url, timeout=15000, wait_until="domcontentloaded")
-                page.wait_for_timeout(15000)
+                page.goto(url, timeout=20000, wait_until="domcontentloaded")
+                page.wait_for_timeout(20000)
                 income = extract_income(page.content())
                 elapsed = time.time() - start
                 if income > 0: log(PASS, f"'{pc}'", f"Income: £{income:,} ({elapsed:.1f}s)")

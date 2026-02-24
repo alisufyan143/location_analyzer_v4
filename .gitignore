@@ -215,4 +215,6 @@ debug_import.py
 pytest_error.txt
 models/*.pkl
 THING TO INCLUDE !!!!
+Artifacts/
+notebooks/
 

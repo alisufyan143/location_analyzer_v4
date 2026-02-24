@@ -62,19 +62,19 @@ class TestScraperSettings:
         assert settings.max_delay == 8.0
         assert settings.max_retries == 3
         assert settings.headless is True
-        assert settings.proxies is None
+        assert settings.doogal_proxies is None
 
-    def test_parse_proxies_string(self, monkeypatch):
-        """Proxies should be parseable from comma-separated string."""
-        monkeypatch.setenv("SCRAPER_PROXIES", "http://proxy1:8080, http://proxy2:8080")
+    def test_parse_doogal_proxies_string(self, monkeypatch):
+        """Doogal proxies should be parseable from comma-separated string."""
+        monkeypatch.setenv("SCRAPER_DOOGAL_PROXIES", "http://proxy1:8080, http://proxy2:8080")
         settings = ScraperSettings()
-        assert settings.proxies == ["http://proxy1:8080", "http://proxy2:8080"]
+        assert settings.doogal_proxies == ["http://proxy1:8080", "http://proxy2:8080"]
 
-    def test_parse_proxies_empty(self, monkeypatch):
-        """Empty proxies string should result in None."""
-        monkeypatch.setenv("SCRAPER_PROXIES", "")
+    def test_parse_doogal_proxies_empty(self, monkeypatch):
+        """Empty doogal proxies string should result in None."""
+        monkeypatch.setenv("SCRAPER_DOOGAL_PROXIES", "")
         settings = ScraperSettings()
-        assert settings.proxies is None
+        assert settings.doogal_proxies is None
 
     def test_min_delay_configurable(self, monkeypatch):
         """Delays should be configurable."""

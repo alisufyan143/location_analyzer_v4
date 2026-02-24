@@ -8,8 +8,15 @@ No hardcoded secrets or paths — everything is configurable.
 from pathlib import Path
 from typing import Optional
 
+from dotenv import load_dotenv
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Load .env so SCRAPER_DOOGAL_PROXIES etc. are available before Settings() is built.
+# Prefer project root (parent of src/), then current working directory.
+_env_dir = Path(__file__).resolve().parents[2]
+load_dotenv(_env_dir / ".env")
+load_dotenv()
 
 
 class DatabaseSettings(BaseSettings):
@@ -38,15 +45,21 @@ class ScraperSettings(BaseSettings):
     max_delay: float = 8.0
     max_retries: int = 3
     timeout: int = 30
-    proxies: Optional[list[str]] = None
     headless: bool = True
     nomis_api_uid: Optional[str] = None
+    # Doogal-only rotating proxy (comma-separated). Not used by other scrapers.
+    doogal_proxies: Optional[list[str]] = None
+    # Doogal tab timing (from timing run with proxy). Tune via SCRAPER_DOOGAL_* env vars.
+    doogal_goto_timeout_ms: int = 45_000   # max wait for page load (domcontentloaded)
+    doogal_wait_after_load_ms: int = 8_000 # wait after load for income to render (max ~8s observed)
+    doogal_retries: int = 2                 # retries on failure or missing income
+    doogal_retry_delay_sec: int = 10        # seconds to wait before next retry (avoid rate limits)
 
     model_config = SettingsConfigDict(env_prefix="SCRAPER_")
 
-    @field_validator("proxies", mode="before")
+    @field_validator("doogal_proxies", mode="before")
     @classmethod
-    def parse_proxies(cls, v: str | list[str] | None) -> list[str] | None:
+    def parse_doogal_proxies(cls, v: str | list[str] | None) -> list[str] | None:
         if v is None or v == "":
             return None
         if isinstance(v, str):

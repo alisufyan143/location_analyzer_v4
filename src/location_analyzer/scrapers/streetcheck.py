@@ -31,7 +31,9 @@ Updated: 2026-02-23  (replaced Playwright-based postcodearea/streetcheck scraper
 
 import csv
 import io
+import random
 import re
+import time
 from typing import Any
 
 import requests
@@ -41,8 +43,38 @@ from playwright.sync_api import sync_playwright
 from location_analyzer.scrapers.base import BaseScraper
 from location_analyzer.logging_config import get_logger
 from location_analyzer.exceptions import ScraperParsingError
+from location_analyzer.config import settings
 
 logger = get_logger(__name__)
+
+
+def _proxy_for_playwright(proxy_url: str) -> dict[str, str]:
+    """
+    Convert a proxy URL string into Playwright's proxy dict.
+    Supports:
+      - http://host:port
+      - http://user:pass@host:port
+      - host:port:username:password (e.g. gb.decodo.com:30000:user:pass)
+    """
+    proxy_url = proxy_url.strip()
+    # Decodo-style: host:port:username:password (exactly 4 parts when split by :)
+    if proxy_url.count(":") == 3 and not proxy_url.startswith("http"):
+        parts = proxy_url.split(":", 3)
+        host, port, username, password = parts
+        server = f"http://{host}:{port}"
+        return {"server": server, "username": username, "password": password}
+    if "@" in proxy_url:
+        # auth: "http://user:pass@host:port"
+        auth_part, server_part = proxy_url.rsplit("@", 1)
+        server = "http://" + server_part if not server_part.startswith("http") else server_part
+        if "://" in auth_part:
+            auth_part = auth_part.split("://", 1)[1]
+        if ":" in auth_part:
+            username, password = auth_part.split(":", 1)
+            return {"server": server, "username": username, "password": password}
+        return {"server": server}
+    server = proxy_url if proxy_url.startswith("http") else "http://" + proxy_url
+    return {"server": server}
 
 # ─── Nomis API Constants ─────────────────────────────────
 NOMIS_BASE = "https://www.nomisweb.co.uk/api/v01/dataset"
@@ -160,7 +192,7 @@ class DemographicsScraper(BaseScraper):
     Fetches postcode demographics via the Nomis Census 2021 REST API
     and average household income from Doogal.co.uk (via Playwright).
 
-    No proxy or anti-bot bypass required.
+    Optional: set SCRAPER_DOOGAL_PROXIES (comma-separated) for Doogal rotating proxy only.
 
     Args:
         headless: If False, the Playwright browser opens visibly for debugging.
@@ -345,89 +377,99 @@ class DemographicsScraper(BaseScraper):
         """
         Scrape average household income from doogal.co.uk using Playwright.
 
-        Uses a persistent headful browser approach to avoid Doogal's anti-bot "tarpit".
-        Doogal caches the session and delays the very first load by ~30 seconds, 
-        and subsequent loads by ~15 seconds.
+        Uses rotating proxy if SCRAPER_DOOGAL_PROXIES is set. Timing and retries are
+        configurable (doogal_goto_timeout_ms, doogal_wait_after_load_ms, doogal_retries,
+        doogal_retry_delay_sec). With proxy, keep tab open ~8s after load for content to render;
+        wait 10s before retry to avoid rate limits.
         """
         pc_encoded = postcode.replace(" ", "%20")
         url = DOOGAL_URL.format(postcode=pc_encoded)
+        goto_ms = getattr(settings.scraper, "doogal_goto_timeout_ms", 45_000)
+        wait_ms = getattr(settings.scraper, "doogal_wait_after_load_ms", 8_000)
+        max_retries = getattr(settings.scraper, "doogal_retries", 2)
+        retry_delay_sec = getattr(settings.scraper, "doogal_retry_delay_sec", 10)
+
         logger.info("Doogal request (Playwright, headless=%s): %s", self.headless, url)
 
-        with sync_playwright() as pw:
-            # Must be headless=False (or headless depending on user preference, 
-            # but testing showed Headful survives the tarpit reliably)
-            browser = pw.chromium.launch(headless=self.headless)
-            context = browser.new_context(
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/131.0.0.0 Safari/537.36"
-                )
-            )
-            page = context.new_page()
+        last_error = None
+        for attempt in range(max_retries + 1):
+            if attempt > 0:
+                logger.info("Doogal retry %d/%d for %s in %ds", attempt, max_retries, postcode, retry_delay_sec)
+                time.sleep(retry_delay_sec)
 
-            try:
-                # 45 second timeout because Doogal intentionally stalls new connections for ~30s
-                page.goto(url, timeout=45000, wait_until="domcontentloaded")
-                # Wait for the demographics section to render and the JS to execute
-                page.wait_for_timeout(3000)
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch(headless=self.headless)
+                context_options = {
+                    "user_agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/131.0.0.0 Safari/537.36"
+                    )
+                }
+                if settings.scraper.doogal_proxies:
+                    proxy_url = random.choice(settings.scraper.doogal_proxies)
+                    context_options["proxy"] = _proxy_for_playwright(proxy_url)
+                    logger.debug("Doogal using proxy: %s", proxy_url.split("@")[-1] if "@" in proxy_url else proxy_url)
+                context = browser.new_context(**context_options)
+                page = context.new_page()
 
-                html = page.content()
-                soup = BeautifulSoup(html, "html.parser")
+                try:
+                    page.goto(url, timeout=goto_ms, wait_until="domcontentloaded")
+                    page.wait_for_timeout(wait_ms)
 
-                # ── Strategy 1: Exact Doogal structure ──────────────
-                for th in soup.find_all("th"):
-                    text = th.get_text(strip=True)
-                    if "average household income" in text.lower():
-                        next_td = th.find_next_sibling("td")
-                        if next_td:
-                            # Look for <span class="show"> inside the progress bar
-                            span = next_td.find("span", class_="show")
-                            if span:
-                                match = re.search(r"£([\d,]+)", span.get_text(strip=True))
+                    html = page.content()
+                    soup = BeautifulSoup(html, "html.parser")
+
+                    # ── Strategy 1: Exact Doogal structure ──────────────
+                    for th in soup.find_all("th"):
+                        text = th.get_text(strip=True)
+                        if "average household income" in text.lower():
+                            next_td = th.find_next_sibling("td")
+                            if next_td:
+                                span = next_td.find("span", class_="show")
+                                if span:
+                                    match = re.search(r"£([\d,]+)", span.get_text(strip=True))
+                                    if match:
+                                        income = int(match.group(1).replace(",", ""))
+                                        logger.info("Doogal income found (span.show): £%s", f"{income:,}")
+                                        return income
+                                match = re.search(r"£([\d,]+)", next_td.get_text())
                                 if match:
                                     income = int(match.group(1).replace(",", ""))
-                                    logger.info("Doogal income found (span.show): £%s", f"{income:,}")
+                                    logger.info("Doogal income found (td text): £%s", f"{income:,}")
                                     return income
-                            # Fallback: any £ amount in the td
-                            match = re.search(r"£([\d,]+)", next_td.get_text())
-                            if match:
-                                income = int(match.group(1).replace(",", ""))
-                                logger.info("Doogal income found (td text): £%s", f"{income:,}")
-                                return income
 
-                # ── Strategy 2: Also check <td> labels (in case structure changes)
-                for td in soup.find_all("td"):
-                    text = td.get_text(strip=True)
-                    if "average household income" in text.lower():
-                        next_td = td.find_next_sibling("td")
-                        if next_td:
-                            match = re.search(r"£([\d,]+)", next_td.get_text())
-                            if match:
-                                income = int(match.group(1).replace(",", ""))
-                                logger.info("Doogal income found (td fallback): £%s", f"{income:,}")
-                                return income
+                    # ── Strategy 2: Also check <td> labels ──────────────
+                    for td in soup.find_all("td"):
+                        text = td.get_text(strip=True)
+                        if "average household income" in text.lower():
+                            next_td = td.find_next_sibling("td")
+                            if next_td:
+                                match = re.search(r"£([\d,]+)", next_td.get_text())
+                                if match:
+                                    income = int(match.group(1).replace(",", ""))
+                                    logger.info("Doogal income found (td fallback): £%s", f"{income:,}")
+                                    return income
 
-                # ── Strategy 3: Full-page regex as last resort
-                page_text = soup.get_text()
-                match = re.search(
-                    r"average\s+household\s+income.*?£([\d,]+)",
-                    page_text,
-                    re.IGNORECASE | re.DOTALL,
-                )
-                if match:
-                    income = int(match.group(1).replace(",", ""))
-                    logger.info("Doogal income found (regex): £%s", f"{income:,}")
-                    return income
+                    # ── Strategy 3: Full-page regex ─────────────────────
+                    page_text = soup.get_text()
+                    match = re.search(
+                        r"average\s+household\s+income.*?£([\d,]+)",
+                        page_text,
+                        re.IGNORECASE | re.DOTALL,
+                    )
+                    if match:
+                        income = int(match.group(1).replace(",", ""))
+                        logger.info("Doogal income found (regex): £%s", f"{income:,}")
+                        return income
 
-                logger.warning("Could not find income on Doogal for %s", postcode)
-                return 0
+                    last_error = None
+                except Exception as e:
+                    last_error = e
+                    logger.warning("Doogal attempt failed for %s: %s", postcode, e)
+                finally:
+                    context.close()
 
-            except Exception as e:
-                logger.warning("Doogal scrape failed for %s: %s", postcode, e)
-                return 0
-            
-            finally:
-                # Let context manager handle teardown cleanly
-                pass
+        logger.warning("Doogal scrape failed for %s after %d attempts", postcode, max_retries + 1)
+        return 0
 
