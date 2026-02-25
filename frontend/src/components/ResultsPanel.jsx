@@ -32,7 +32,7 @@ export default function ResultsPanel({ result }) {
             <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', borderRight: '1px solid var(--border-color)', paddingRight: '2rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem', color: "var(--text-secondary)" }}>
                     <TrendingUp size={24} color="var(--accent-success)" />
-                    <h2 style={{ fontSize: '1rem', fontWeight: 500, margin: 0 }}>Predicted Weekly Sales</h2>
+                    <h2 style={{ fontSize: '1rem', fontWeight: 500, margin: 0 }}>Predicted Monthly Sales</h2>
                 </div>
                 <div className="value-highlight gradient-text" style={{ fontSize: '3.5rem', lineHeight: 1 }}>
                     {result.currency}{result.predicted_sales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -57,7 +57,7 @@ export default function ResultsPanel({ result }) {
                                 <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} domain={['auto', 'auto']} tickFormatter={(value) => `£${(value / 1000).toFixed(1)}k`} width={50} />
                                 <Tooltip
                                     contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '0.875rem' }}
-                                    formatter={(value) => [`£${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 'Weekly Sales']}
+                                    formatter={(value) => [`£${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 'Monthly Sales']}
                                     labelStyle={{ color: 'var(--text-primary)' }}
                                 />
                                 <Area type="monotone" dataKey="predicted_sales" stroke="var(--accent-primary)" strokeWidth={3} fillOpacity={1} fill="url(#colorSales)" />

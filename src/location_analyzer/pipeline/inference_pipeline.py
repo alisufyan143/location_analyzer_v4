@@ -53,9 +53,14 @@ class InferencePipeline:
         if isinstance(transport, dict):
             # Transport Score → Transport_Accessibility_Score
             score = transport.get("score")
+            # CrystalRoof transport score can be legitimately missing for some postcodes.
+            # Treat 0/None as missing (do NOT emit 0, because the ML OrdinalEncoder
+            # was not trained with category 0 and will crash on it).
             if score is not None:
                 try:
-                    flat["Transport_Accessibility_Score"] = int(score)
+                    score_int = int(score)
+                    if score_int > 0:
+                        flat["Transport_Accessibility_Score"] = score_int
                 except (ValueError, TypeError):
                     pass
 

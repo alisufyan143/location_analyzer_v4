@@ -157,13 +157,14 @@ class PredictionService:
         # 6. Yeo-Johnson (working, c1/c2)
         yeo_cols = ['working', 'c1/c2']
         if self.pt is not None:
-            available_cols = [c for c in yeo_cols if c in df_clean.columns]
-            if len(available_cols) > 0:
-                mask = df_clean[available_cols].notna().all(axis=1)
+            # PowerTransformer was fitted on BOTH columns together.
+            # If either is missing, skip (otherwise sklearn throws "feature names missing").
+            if all(c in df_clean.columns for c in yeo_cols):
+                mask = df_clean[yeo_cols].notna().all(axis=1)
                 if mask.sum() > 0:
                     try:
-                        transformed = self.pt.transform(df_clean.loc[mask, available_cols])
-                        for idx, col in enumerate(available_cols):
+                        transformed = self.pt.transform(df_clean.loc[mask, yeo_cols])
+                        for idx, col in enumerate(yeo_cols):
                             df_clean.loc[mask, col] = transformed[:, idx]
                     except Exception as e:
                         logger.warning(f"Error applying PowerTransformer: {e}")
@@ -180,9 +181,36 @@ class PredictionService:
 
         # 9. OrdinalEncoder (Transport_Accessibility_Score)
         if 'Transport_Accessibility_Score' in df_clean.columns and self.oe is not None:
+            # Transport score is sometimes legitimately missing. Treat 0/non-fitted values as missing
+            # so we don't crash inference with "Found unknown categories [0.0]".
+            df_clean['Transport_Accessibility_Score'] = pd.to_numeric(
+                df_clean['Transport_Accessibility_Score'], errors='coerce'
+            )
+            # 0 means "unknown/missing" from scraper defaults, not a real category.
+            df_clean.loc[df_clean['Transport_Accessibility_Score'] <= 0, 'Transport_Accessibility_Score'] = np.nan
+
             mask = df_clean['Transport_Accessibility_Score'].notna()
             if mask.sum() > 0:
-                df_clean.loc[mask, 'Transport_Accessibility_Score'] = self.oe.transform(df_clean.loc[mask, ['Transport_Accessibility_Score']])
+                try:
+                    # Filter to known categories (if available) to avoid hard failure.
+                    cats = getattr(self.oe, "categories_", None)
+                    if cats and len(cats) >= 1:
+                        known = set(float(x) for x in cats[0] if x is not None)
+                        known_mask = mask & df_clean['Transport_Accessibility_Score'].isin(known)
+                        if known_mask.sum() > 0:
+                            df_clean.loc[known_mask, 'Transport_Accessibility_Score'] = self.oe.transform(
+                                df_clean.loc[known_mask, ['Transport_Accessibility_Score']]
+                            )
+                        # Unknown values become missing instead of crashing.
+                        df_clean.loc[mask & ~known_mask, 'Transport_Accessibility_Score'] = np.nan
+                    else:
+                        df_clean.loc[mask, 'Transport_Accessibility_Score'] = self.oe.transform(
+                            df_clean.loc[mask, ['Transport_Accessibility_Score']]
+                        )
+                except Exception as e:
+                    logger.warning(f"Error applying OrdinalEncoder (Transport_Accessibility_Score): {e}")
+                    # Worst case: don't break prediction; treat as missing.
+                    df_clean.loc[mask, 'Transport_Accessibility_Score'] = np.nan
 
         # 10. Date Extractions
         if 'Date' in df_clean.columns:

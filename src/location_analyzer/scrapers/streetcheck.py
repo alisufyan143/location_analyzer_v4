@@ -375,101 +375,211 @@ class DemographicsScraper(BaseScraper):
     # ─── Doogal Income Scraper (Playwright) ───────────────────
     def _fetch_doogal_income(self, postcode: str) -> int:
         """
-        Scrape average household income from doogal.co.uk using Playwright.
+        Exec-safe Doogal income fetch with bounded latency.
 
-        Uses rotating proxy if SCRAPER_DOOGAL_PROXIES is set. Timing and retries are
-        configurable (doogal_goto_timeout_ms, doogal_wait_after_load_ms, doogal_retries,
-        doogal_retry_delay_sec). With proxy, keep tab open ~8s after load for content to render;
-        wait 10s before retry to avoid rate limits.
+        Policy (derived from probe data):
+          - L1: `requests` HTML fetch + parse (fast/cheap, high success rate)
+          - L5: Playwright + rotating proxy fallback (higher success, higher variance)
+
+        A hard deadline is enforced via `SCRAPER_DOOGAL_TOTAL_BUDGET_SEC` (default 75s),
+        so we never block the API for multiple minutes.
         """
+        def _extract_income_from_html(html: str) -> int:
+            soup = BeautifulSoup(html, "html.parser")
+
+            # Strategy 1: Exact Doogal structure (<th> label -> <td>)
+            for th in soup.find_all("th"):
+                text = th.get_text(strip=True).lower()
+                if "average household income" in text:
+                    next_td = th.find_next_sibling("td")
+                    if next_td:
+                        span = next_td.find("span", class_="show")
+                        if span:
+                            match = re.search(r"£([\d,]+)", span.get_text(strip=True))
+                            if match:
+                                return int(match.group(1).replace(",", ""))
+                        match = re.search(r"£([\d,]+)", next_td.get_text(" ", strip=True))
+                        if match:
+                            return int(match.group(1).replace(",", ""))
+
+            # Strategy 2: <td> label fallback
+            for td in soup.find_all("td"):
+                text = td.get_text(strip=True).lower()
+                if "average household income" in text:
+                    next_td = td.find_next_sibling("td")
+                    if next_td:
+                        match = re.search(r"£([\d,]+)", next_td.get_text(" ", strip=True))
+                        if match:
+                            return int(match.group(1).replace(",", ""))
+
+            # Strategy 3: Full-page regex
+            match = re.search(
+                r"average\s+household\s+income.*?£([\d,]+)",
+                soup.get_text(" ", strip=True),
+                re.IGNORECASE | re.DOTALL,
+            )
+            if match:
+                return int(match.group(1).replace(",", ""))
+            return 0
+
+        def _blocked_signal(html: str, title: str) -> str:
+            text = f"{title}\n{html[:5000]}".lower()
+            signals = ["access denied", "forbidden", "captcha", "cloudflare", "rate limit", "too many requests"]
+            hits = [s for s in signals if s in text]
+            return ";".join(hits) if hits else ""
+
         pc_encoded = postcode.replace(" ", "%20")
         url = DOOGAL_URL.format(postcode=pc_encoded)
-        goto_ms = getattr(settings.scraper, "doogal_goto_timeout_ms", 45_000)
-        wait_ms = getattr(settings.scraper, "doogal_wait_after_load_ms", 8_000)
-        max_retries = getattr(settings.scraper, "doogal_retries", 2)
-        retry_delay_sec = getattr(settings.scraper, "doogal_retry_delay_sec", 10)
 
-        logger.info("Doogal request (Playwright, headless=%s): %s", self.headless, url)
+        budget_sec = float(getattr(settings.scraper, "doogal_total_budget_sec", 75))
+        started = time.perf_counter()
+        deadline = started + max(1.0, budget_sec)
 
-        last_error = None
-        for attempt in range(max_retries + 1):
-            if attempt > 0:
-                logger.info("Doogal retry %d/%d for %s in %ds", attempt, max_retries, postcode, retry_delay_sec)
-                time.sleep(retry_delay_sec)
+        def remaining_sec() -> float:
+            return max(0.0, deadline - time.perf_counter())
+
+        # -------------------------
+        # L1: requests (bounded)
+        # -------------------------
+        l1_max_attempts = int(getattr(settings.scraper, "doogal_l1_max_attempts", 2))
+        l1_attempt_timeout = float(getattr(settings.scraper, "doogal_l1_attempt_timeout_sec", 12))
+        l1_retry_delay = float(getattr(settings.scraper, "doogal_l1_retry_delay_sec", 0.6))
+
+        session = requests.Session()
+        session.headers.update(
+            {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/131.0.0.0 Safari/537.36"
+                ),
+                "Accept-Language": "en-GB,en;q=0.9",
+                "Cache-Control": "no-cache",
+            }
+        )
+
+        for attempt in range(l1_max_attempts):
+            rem = remaining_sec()
+            if rem < 1.0:
+                break
+
+            timeout = min(l1_attempt_timeout, max(1.0, rem - 0.25))
+            try:
+                logger.info("Doogal L1 (requests) attempt %d/%d timeout=%.1fs", attempt + 1, l1_max_attempts, timeout)
+                resp = session.get(url, timeout=timeout)
+                html = resp.text or ""
+                title = ""
+                try:
+                    soup = BeautifulSoup(html, "html.parser")
+                    title = soup.title.get_text(strip=True) if soup.title else ""
+                except Exception:
+                    title = ""
+
+                blocked = _blocked_signal(html, title)
+                if blocked:
+                    logger.warning("Doogal L1 looks blocked (%s) — escalating to proxy fallback", blocked)
+                    break
+
+                income = _extract_income_from_html(html)
+                if income > 0:
+                    logger.info("Doogal income found via L1: £%s (elapsed=%.2fs)", f"{income:,}", time.perf_counter() - started)
+                    return income
+            except requests.Timeout:
+                logger.warning("Doogal L1 timed out (%.1fs)", timeout)
+            except Exception as e:  # pragma: no cover (network variability)
+                logger.warning("Doogal L1 error: %s", e)
+
+            # Retry delay with jitter, but never exceed the remaining budget.
+            rem = remaining_sec()
+            if attempt < l1_max_attempts - 1 and rem > 0.8:
+                delay = min(rem - 0.25, l1_retry_delay + random.uniform(0.2, 0.8))
+                if delay > 0:
+                    time.sleep(delay)
+
+        # -------------------------
+        # L5: Playwright + rotating proxy (bounded)
+        # -------------------------
+        l5_max_attempts = int(getattr(settings.scraper, "doogal_l5_max_attempts", 1))
+        l5_retry_delay = float(getattr(settings.scraper, "doogal_l5_retry_delay_sec", 1.5))
+
+        proxies = getattr(settings.scraper, "doogal_proxies", None) or []
+        if not proxies:
+            logger.warning("Doogal L5 skipped: no rotating proxies configured (SCRAPER_DOOGAL_PROXIES empty)")
+            return 0
+
+        goto_ms_cfg = int(getattr(settings.scraper, "doogal_goto_timeout_ms", 45_000))
+        wait_ms_cfg = int(getattr(settings.scraper, "doogal_wait_after_load_ms", 8_000))
+
+        for attempt in range(l5_max_attempts):
+            rem = remaining_sec()
+            if rem < 3.0:
+                break
+
+            proxy_url = random.choice(proxies)
+            # Budget-aware timeouts
+            rem_ms = int(rem * 1000)
+            goto_ms = min(goto_ms_cfg, max(5_000, rem_ms - 2_000))
+            wait_ms = min(wait_ms_cfg, max(1_000, rem_ms - goto_ms - 500))
+
+            logger.info(
+                "Doogal L5 (playwright+proxy) attempt %d/%d goto=%dms wait=%dms (elapsed=%.2fs)",
+                attempt + 1,
+                l5_max_attempts,
+                goto_ms,
+                wait_ms,
+                time.perf_counter() - started,
+            )
 
             with sync_playwright() as pw:
                 browser = pw.chromium.launch(headless=self.headless)
-                context_options = {
-                    "user_agent": (
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/131.0.0.0 Safari/537.36"
-                    )
-                }
-                if settings.scraper.doogal_proxies:
-                    proxy_url = random.choice(settings.scraper.doogal_proxies)
-                    context_options["proxy"] = _proxy_for_playwright(proxy_url)
-                    logger.debug("Doogal using proxy: %s", proxy_url.split("@")[-1] if "@" in proxy_url else proxy_url)
-                context = browser.new_context(**context_options)
+                context = browser.new_context(
+                    user_agent=session.headers.get("User-Agent") or "",
+                    proxy=_proxy_for_playwright(proxy_url),
+                )
                 page = context.new_page()
+
+                # Speed + reduce failure surface: don't download heavy assets.
+                page.route(
+                    "**/*",
+                    lambda route, req: route.abort()
+                    if req.resource_type in {"image", "font", "media"}
+                    else route.continue_(),
+                )
 
                 try:
                     page.goto(url, timeout=goto_ms, wait_until="domcontentloaded")
-                    page.wait_for_timeout(wait_ms)
 
-                    html = page.content()
-                    soup = BeautifulSoup(html, "html.parser")
+                    # Poll for income to appear (bounded).
+                    poll_start = time.perf_counter()
+                    poll_deadline = poll_start + (wait_ms / 1000.0)
+                    income = 0
+                    html = ""
+                    while time.perf_counter() < poll_deadline:
+                        page.wait_for_timeout(900)
+                        html = page.content()
+                        income = _extract_income_from_html(html)
+                        if income > 0:
+                            break
 
-                    # ── Strategy 1: Exact Doogal structure ──────────────
-                    for th in soup.find_all("th"):
-                        text = th.get_text(strip=True)
-                        if "average household income" in text.lower():
-                            next_td = th.find_next_sibling("td")
-                            if next_td:
-                                span = next_td.find("span", class_="show")
-                                if span:
-                                    match = re.search(r"£([\d,]+)", span.get_text(strip=True))
-                                    if match:
-                                        income = int(match.group(1).replace(",", ""))
-                                        logger.info("Doogal income found (span.show): £%s", f"{income:,}")
-                                        return income
-                                match = re.search(r"£([\d,]+)", next_td.get_text())
-                                if match:
-                                    income = int(match.group(1).replace(",", ""))
-                                    logger.info("Doogal income found (td text): £%s", f"{income:,}")
-                                    return income
-
-                    # ── Strategy 2: Also check <td> labels ──────────────
-                    for td in soup.find_all("td"):
-                        text = td.get_text(strip=True)
-                        if "average household income" in text.lower():
-                            next_td = td.find_next_sibling("td")
-                            if next_td:
-                                match = re.search(r"£([\d,]+)", next_td.get_text())
-                                if match:
-                                    income = int(match.group(1).replace(",", ""))
-                                    logger.info("Doogal income found (td fallback): £%s", f"{income:,}")
-                                    return income
-
-                    # ── Strategy 3: Full-page regex ─────────────────────
-                    page_text = soup.get_text()
-                    match = re.search(
-                        r"average\s+household\s+income.*?£([\d,]+)",
-                        page_text,
-                        re.IGNORECASE | re.DOTALL,
-                    )
-                    if match:
-                        income = int(match.group(1).replace(",", ""))
-                        logger.info("Doogal income found (regex): £%s", f"{income:,}")
+                    if income > 0:
+                        logger.info(
+                            "Doogal income found via L5: £%s (elapsed=%.2fs)",
+                            f"{income:,}",
+                            time.perf_counter() - started,
+                        )
                         return income
-
-                    last_error = None
-                except Exception as e:
-                    last_error = e
-                    logger.warning("Doogal attempt failed for %s: %s", postcode, e)
+                except Exception as e:  # pragma: no cover (network variability)
+                    logger.warning("Doogal L5 attempt failed: %s", e)
                 finally:
                     context.close()
+                    browser.close()
 
-        logger.warning("Doogal scrape failed for %s after %d attempts", postcode, max_retries + 1)
+            rem = remaining_sec()
+            if attempt < l5_max_attempts - 1 and rem > 1.0:
+                delay = min(rem - 0.25, l5_retry_delay + random.uniform(0.2, 1.0))
+                if delay > 0:
+                    time.sleep(delay)
+
+        logger.warning("Doogal income unavailable within budget (%.0fs) for %s", budget_sec, postcode)
         return 0
 

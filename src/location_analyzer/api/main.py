@@ -1,36 +1,44 @@
 import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
 
 from location_analyzer.api.routes import router
 from location_analyzer.ml.predict import PredictionService
 from location_analyzer.config import settings
+from location_analyzer.data.database import create_db_engine, create_session_factory, init_db
 
 logger = logging.getLogger(__name__)
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Load the heavy ML model and Scikit-Learn pipelines once
-    model_dir = settings.paths.data_dir.replace('data', 'models')
-    # Because config.py doesn't have a direct attribute for models_dir natively available on top level. 
-    # But wait, settings has `ml.models_dir`.
-    
-    # Actually, let's use the explicit path from settings
+    # Ensure data dir exists (for SQLite file at data/location_analyzer.db)
+    settings.paths.ensure_dirs()
+
+    # Database: create tables and session factory (short-lived sessions per request)
+    try:
+        engine = create_db_engine()
+        init_db(engine)
+        app.state.session_factory = create_session_factory(engine)
+        logger.info("Database initialized; session factory attached.")
+    except Exception as e:
+        logger.error("Database init failed: %s. Predict will not persist.", e)
+        app.state.session_factory = None
+
+    # ML model (loaded once)
     model_dir = settings.ml.models_dir
-    
-    logger.info(f"Initializing PredictionService from {model_dir}...")
+    logger.info("Initializing PredictionService from %s...", model_dir)
     try:
         app.state.model_service = PredictionService(model_dir=str(model_dir))
         logger.info("PredictionService initialized successfully.")
     except Exception as e:
-        logger.error(f"Failed to initialize PredictionService: {e}")
-        # We don't raise here so the app can still boot and serve healthchecks,
-        # but the /predict endpoint will 500.
+        logger.error("Failed to initialize PredictionService: %s", e)
         app.state.model_service = None
-        
+
     yield
-    # Shutdown logic (if any) goes here
+    # Shutdown: nothing to close (sessions are request-scoped)
 
 app = FastAPI(
     title="Location Analyzer API",

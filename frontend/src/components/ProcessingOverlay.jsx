@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react'
 import { Loader2, Database, Map, Cpu, CheckCircle } from 'lucide-react'
 
 const steps = [
-    { text: "Connecting to Census API...", icon: Database, delay: 0 },
-    { text: "Extracting Output Area Demographics...", icon: UsersIcon, delay: 15 },
-    { text: "Scanning Transport & Amenities...", icon: Map, delay: 40 },
-    { text: "Running XGBoost & LightGBM Ensemble...", icon: Cpu, delay: 65 },
-    { text: "Finalizing 12-Month Forecast...", icon: CheckCircle, delay: 85 }
+    { text: "Checking saved data & fetching postcode...", icon: Database, delay: 0 },
+    { text: "Extracting demographics (Nomis & Doogal)...", icon: UsersIcon, delay: 15 },
+    { text: "Scanning transport & amenities...", icon: Map, delay: 40 },
+    { text: "Running ML ensemble (XGBoost & LightGBM)...", icon: Cpu, delay: 65 },
+    { text: "Finalizing 12‑month forecast...", icon: CheckCircle, delay: 85 }
 ]
+const completedStep = { text: "Complete!", icon: CheckCircle }
 
 function UsersIcon(props) {
     return (
@@ -31,34 +32,33 @@ function UsersIcon(props) {
     )
 }
 
-export default function ProcessingOverlay() {
+export default function ProcessingOverlay({ completed = false }) {
     const [progress, setProgress] = useState(0)
     const [currentStepIndex, setCurrentStepIndex] = useState(0)
 
     useEffect(() => {
-        // Target time is roughly 90 seconds
-        const DURATION_MS = 90000;
-        const intervalTime = 100; // update every 100ms
-        const increment = (100 / (DURATION_MS / intervalTime));
+        if (completed) return
+        // Estimate progress over ~2 min so bar doesn't sit at 99% for long when backend is slow
+        const DURATION_MS = 120000
+        const intervalTime = 100
+        const increment = (100 / (DURATION_MS / intervalTime))
 
         const timer = setInterval(() => {
             setProgress(p => {
-                const nextProgress = Math.min(p + increment, 99); // max 99% until actually done
+                const nextProgress = Math.min(p + increment, 99) // cap 99% until backend completes
 
-                // Update text based on progress thresholds
-                const stepIndex = steps.findLastIndex(s => nextProgress >= s.delay);
-                if (stepIndex !== -1 && stepIndex !== currentStepIndex) {
-                    setCurrentStepIndex(stepIndex);
-                }
+                const stepIndex = steps.findLastIndex(s => nextProgress >= s.delay)
+                if (stepIndex !== -1) setCurrentStepIndex(stepIndex)
+                return nextProgress
+            })
+        }, intervalTime)
+        return () => clearInterval(timer)
+    }, [completed])
 
-                return nextProgress;
-            });
-        }, intervalTime);
-
-        return () => clearInterval(timer);
-    }, [currentStepIndex]);
-
-    const CurrentIcon = steps[currentStepIndex].icon;
+    const isComplete = completed
+    const displayProgress = isComplete ? 100 : progress
+    const currentStep = isComplete ? completedStep : steps[currentStepIndex]
+    const CurrentIcon = currentStep.icon
 
     return (
         <div style={{
@@ -102,12 +102,12 @@ export default function ProcessingOverlay() {
                         justifyContent: 'center',
                         color: 'white'
                     }}>
-                        <CurrentIcon size={32} className={currentStepIndex < 4 ? 'spinning-slow' : ''} />
+                        <CurrentIcon size={32} className={!isComplete && currentStepIndex < 4 ? 'spinning-slow' : ''} />
                     </div>
                 </div>
 
                 <h2 style={{ fontSize: '1.5rem', marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
-                    Analyzing Location Data
+                    {isComplete ? 'Analysis complete' : 'Analyzing location data'}
                 </h2>
 
                 <p style={{
@@ -117,13 +117,13 @@ export default function ProcessingOverlay() {
                     marginBottom: '2rem',
                     transition: 'all 0.3s ease'
                 }}>
-                    {steps[currentStepIndex].text}
+                    {currentStep.text}
                 </p>
 
                 <div style={{ width: '100%', marginBottom: '0.5rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
                         <span>Progress</span>
-                        <span style={{ fontVariantNumeric: 'tabular-nums' }}>{Math.floor(progress)}%</span>
+                        <span style={{ fontVariantNumeric: 'tabular-nums' }}>{Math.floor(displayProgress)}%</span>
                     </div>
                     <div style={{
                         height: '6px',
@@ -134,7 +134,7 @@ export default function ProcessingOverlay() {
                     }}>
                         <div style={{
                             height: '100%',
-                            width: `${progress}%`,
+                            width: `${displayProgress}%`,
                             background: 'linear-gradient(90deg, var(--accent-primary), var(--accent-secondary))',
                             borderRadius: '999px',
                             transition: 'width 0.1s linear',
@@ -143,9 +143,11 @@ export default function ProcessingOverlay() {
                     </div>
                 </div>
 
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '1.5rem' }}>
-                    This process involves live web scraping and ML inference and usually takes 60–90 seconds. Please do not refresh.
-                </p>
+                {!isComplete && (
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '1.5rem' }}>
+                        Backend is fetching data and running the model. This usually takes 1–2 minutes. Please do not refresh.
+                    </p>
+                )}
             </div>
         </div>
     )

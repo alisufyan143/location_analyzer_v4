@@ -9,6 +9,7 @@ import ProcessingOverlay from './components/ProcessingOverlay'
 
 function App() {
   const [loading, setLoading] = useState(false)
+  const [requestComplete, setRequestComplete] = useState(false) // backend finished; show 100% then hide
   const [error, setError] = useState(null)
   const [result, setResult] = useState(null)
 
@@ -19,6 +20,7 @@ function App() {
     }
 
     setLoading(true)
+    setRequestComplete(false)
     setError(null)
     setResult(null)
 
@@ -27,12 +29,16 @@ function App() {
         postcode: postcode
       }, { timeout: 300000 })  // 5 min – scraping pipeline takes 60-90s
       setResult(response.data)
+      setRequestComplete(true) // sync overlay: show 100% then hide
+      setTimeout(() => {
+        setLoading(false)
+        setRequestComplete(false)
+      }, 600)
     } catch (err) {
       console.error(err)
       setError(
         err.response?.data?.detail || "Failed to connect to the prediction server. Is FastAPI running?"
       )
-    } finally {
       setLoading(false)
     }
   }
@@ -70,7 +76,7 @@ function App() {
         <MapArea result={result} />
 
         {/* The beautiful glassmorphic 90-second loading overlay */}
-        {loading && <ProcessingOverlay />}
+        {loading && <ProcessingOverlay completed={requestComplete} />}
 
         {/* Floating results panel that appears after prediction */}
         {result && !loading && (

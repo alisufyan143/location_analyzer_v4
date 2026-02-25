@@ -54,6 +54,29 @@ class ScraperSettings(BaseSettings):
     doogal_wait_after_load_ms: int = 8_000 # wait after load for income to render (max ~8s observed)
     doogal_retries: int = 2                 # retries on failure or missing income
     doogal_retry_delay_sec: int = 10        # seconds to wait before next retry (avoid rate limits)
+    doogal_requests_timeout_sec: int = 20
+    doogal_wait_until_modes: list[str] = ["domcontentloaded", "load"]
+
+    # Doogal execution policy (L1 -> L5) bounded by a hard deadline.
+    # This keeps the exec-facing UX predictable while still allowing fallback.
+    doogal_total_budget_sec: int = 75
+    doogal_l1_max_attempts: int = 2
+    doogal_l1_attempt_timeout_sec: int = 12
+    doogal_l1_retry_delay_sec: float = 0.6
+    doogal_l5_max_attempts: int = 1
+    doogal_l5_retry_delay_sec: float = 1.5
+
+    # Reliability SLOs and policy controls used by the intelligent Doogal selector.
+    doogal_slo_success_rate: float = 0.98
+    doogal_slo_timeout_rate: float = 0.015
+    doogal_slo_blocked_rate: float = 0.005
+    doogal_slo_p95_latency_sec: float = 35.0
+    doogal_selector_window: int = 80
+    doogal_selector_min_samples: int = 10
+    doogal_cb_fail_threshold: int = 5
+    doogal_cb_cooldown_sec: int = 300
+    doogal_retry_base_sec: float = 2.0
+    doogal_retry_max_sec: float = 20.0
 
     model_config = SettingsConfigDict(env_prefix="SCRAPER_")
 
@@ -65,6 +88,15 @@ class ScraperSettings(BaseSettings):
         if isinstance(v, str):
             return [p.strip() for p in v.split(",") if p.strip()]
         return v
+
+    @field_validator("doogal_wait_until_modes", mode="before")
+    @classmethod
+    def parse_doogal_wait_modes(cls, v: str | list[str] | None) -> list[str]:
+        if v is None or v == "":
+            return ["domcontentloaded", "load"]
+        if isinstance(v, str):
+            return [m.strip() for m in v.split(",") if m.strip()]
+        return [str(m).strip() for m in v if str(m).strip()]
 
 
 class MLSettings(BaseSettings):
