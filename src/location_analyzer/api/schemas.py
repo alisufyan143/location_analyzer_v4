@@ -10,6 +10,12 @@ class PredictRequest(BaseModel):
     postcode: str = Field(..., description="The full UK postcode to analyze.")
     branch_name: Optional[str] = Field(None, description="Optional name of the branch.")
 
+class GranularTimeSeries(BaseModel):
+    """Daily, Weekly, and Monthly 12-month projections."""
+    daily: List[TimeSeriesPrediction]
+    weekly: List[TimeSeriesPrediction]
+    monthly: List[TimeSeriesPrediction]
+
 class PredictResponse(BaseModel):
     """Response schema returning the £ sales prediction and the features used."""
     postcode: str
@@ -17,7 +23,7 @@ class PredictResponse(BaseModel):
     currency: str = "£"
     features: Dict[str, Any] = Field(..., description="The scraped/compiled features used by the ML model.")
     display_data: Dict[str, Any] = Field(default_factory=dict, description="Rich CrystalRoof data for dashboard display (amenities, ethnicity, occupation, etc.).")
-    time_series: List[TimeSeriesPrediction] = Field(default_factory=list, description="12-month forecasting predictions.")
+    time_series: GranularTimeSeries = Field(..., description="12-month forecasting predictions (Daily/Weekly/Monthly).")
 
     
     model_config = ConfigDict(

@@ -86,14 +86,22 @@ class InferencePipeline:
 
     def run(self, postcode: str) -> Dict[str, Any]:
         """
-        Executes the scraping pipeline for a given postcode and formats the 
-        output dictionary into the exact schema expected by XGBoost `PredictionService`.
+        Full scraping + feature-assembly pipeline for one postcode.
+        Logs input/output at every phase for better visibility.
         """
-        logger.info(f"Starting Inference Pipeline for Postcode: {postcode}")
-        
+        postcode = postcode.strip().upper()
         outercode = self._get_outercode(postcode)
-        
-        # 1. Scrape Demographics (Nomis API + Doogal)
+
+        logger.info(
+            "\n"
+            "┌──────────────────────────────────────────────────────────┐\n"
+            "│  INFERENCE PIPELINE START  postcode=%-22s│\n"
+            "└──────────────────────────────────────────────────────────┘",
+            postcode,
+        )
+
+        # ── PHASE 1: Demographics (Nomis API + Doogal) ────────────────────────
+        logger.info("\n  [PHASE 1] Demographics Scraper (Nomis + Doogal)")
         try:
             demo_data = self.demo_scraper.scrape(postcode)
             logger.info(f"Demographics scraped: {demo_data}")
@@ -101,7 +109,8 @@ class InferencePipeline:
             logger.error(f"Failed to scrape demographics for {postcode}: {e}")
             demo_data = {}
 
-        # 2. Scrape CrystalRoof for Transport/Amenities
+        # ── PHASE 2: CrystalRoof (Transport / Amenities / Ethnicity) ──────────
+        logger.info("\n  [PHASE 2] CrystalRoof Scraper (Rich Data Extraction)")
         try:
             cr_data = self.cr_scraper.scrape(postcode)
             logger.info(f"CrystalRoof scraped: {cr_data}")
@@ -109,7 +118,8 @@ class InferencePipeline:
             logger.error(f"Failed to scrape CrystalRoof for {postcode}: {e}")
             cr_data = {}
 
-        # 3. Combine into unified flat format
+        # ── PHASE 3: Feature Assembly ──────────────────────────────────────────
+        logger.info("\n  [PHASE 3] Feature Assembly & Model Key Mapping")
         combined = {}
         combined.update(demo_data)
 
@@ -127,9 +137,19 @@ class InferencePipeline:
         combined['postcode'] = postcode
         combined['outercode'] = outercode
 
-        # 5. Geocode the postcode for the map pin
+        # ── PHASE 4: Geocoding (Map Pin) ──────────────────────────────────────
+        logger.info("\n  [PHASE 4] Geocoding (Postcodes.io)")
         geo = self._geocode_postcode(postcode)
         if geo:
             combined.update(geo)
-        
+
+        # ── PHASE 5: Attach Rich Display Data ─────────────────────────────────
+        combined["_display"] = cr_data
+
+        logger.info(
+            "\n"
+            "┌──────────────────────────────────────────────────────────┐\n"
+            "│  INFERENCE PIPELINE COMPLETE                             │\n"
+            "└──────────────────────────────────────────────────────────┘\n"
+        )
         return combined

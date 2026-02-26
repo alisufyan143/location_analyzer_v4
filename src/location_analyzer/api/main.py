@@ -8,7 +8,10 @@ from location_analyzer.api.routes import router
 from location_analyzer.ml.predict import PredictionService
 from location_analyzer.config import settings
 from location_analyzer.data.database import create_db_engine, create_session_factory, init_db
+from location_analyzer.logging_config import setup_logging
 
+# Initialize structured logging immediately
+setup_logging(level=settings.logging.level, log_file=settings.logging.file)
 logger = logging.getLogger(__name__)
 
 
