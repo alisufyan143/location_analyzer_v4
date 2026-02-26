@@ -14,6 +14,8 @@
 *   **🤖 Median Ensemble Forecasting**: Evaluates 12+ demographic features, applies rigorous Scikit-Learn transformations, and generates a 12-month trailing sales forecast by aggregating predictions from XGBoost, LightGBM, CatBoost, and Random Forest engines.
 *   **📊 Interactive React Dashboard**: A beautiful Dark-Mode `Vite` + `React` interface featuring `Leaflet` geospatial mapping and `Recharts` data visualization.
 *   **⚡ FastAPI Microservice**: High-concurrency python backend serving `pydantic` validated JSON APIs.
+*   **📄 Comprehensive PDF Export**: A rich client-side engine (`html2canvas` + `jsPDF`) generates mathematically perfect structural PDF reports containing multi-level demographic tables, localized geography data, and cleanly rendered vectorized forecast charts.
+*   **🛡️ Resilient Data Engineering**: Strict 30-day Time-To-Live (TTL) SQLite caching, dual-validation constraints to prevent storing incomplete scrapes, and a 5-attempt exponential backoff mechanism to guarantee location placement logic on Postcodes.io dropouts.
 
 ---
 
@@ -61,6 +63,16 @@ npm run dev
 ```
 
 Visit the local URL (usually `http://localhost:5173`) in your browser to interact with the Dashboard.
+
+---
+
+## 🎨 Dashboard UX & Features
+
+Location Analyzer v2 comes packed with features designed for high-density geographic analysis:
+- **Interactive Multi-Granular Forecasting**: Instantly toggle between Daily, Weekly, and Monthly prediction horizons utilizing high-performance SVG Recharts.
+- **Smart Result Panel Overlays**: Users can seamlessly minimize the heavy data-grid overlay to interact exclusively with the Leaflet map and spatial pinpoints, maintaining core KPIs on screen.
+- **On-Demand Cache Busters**: Bypassing the 30-day SQL limit, the frontend exposes a "Force Live Scrape" API flag to bypass internal checks and command the headless browsers to re-evaluate the target market area.
+- **A4 PDF Report Generation**: By rendering an invisible structural layout component loaded with localized district/ward markers, restaurant proximities, and transport scores, the application exports high-fidelity presentation-ready analytics dashboards entirely inside the client’s browser.
 
 ---
 
