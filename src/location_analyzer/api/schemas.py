@@ -9,6 +9,7 @@ class PredictRequest(BaseModel):
     """Request schema for predicting location sales."""
     postcode: str = Field(..., description="The full UK postcode to analyze.")
     branch_name: Optional[str] = Field(None, description="Optional name of the branch.")
+    force_refresh: bool = Field(False, description="If true, bypasses DB cache and forces a live scrape.")
 
 class GranularTimeSeries(BaseModel):
     """Daily, Weekly, and Monthly 12-month projections."""

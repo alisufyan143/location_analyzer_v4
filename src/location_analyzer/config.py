@@ -23,6 +23,7 @@ class DatabaseSettings(BaseSettings):
     """Database connection settings."""
     
     url: str = "sqlite:///./data/location_analyzer.db"
+    db_cache_ttl_days: int = 30
 
     model_config = SettingsConfigDict(env_prefix="DATABASE_")
 

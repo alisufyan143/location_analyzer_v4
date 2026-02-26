@@ -3,10 +3,11 @@ import { Search, Info } from 'lucide-react'
 
 export default function PredictionForm({ onPredict, isLoading }) {
     const [postcode, setPostcode] = useState('')
+    const [forceRefresh, setForceRefresh] = useState(false)
 
     const handleSubmit = (e) => {
         e.preventDefault()
-        onPredict(postcode)
+        onPredict(postcode, forceRefresh)
     }
 
     return (
@@ -43,6 +44,20 @@ export default function PredictionForm({ onPredict, isLoading }) {
                     </>
                 )}
             </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1rem', justifyContent: 'center' }}>
+                <input
+                    type="checkbox"
+                    id="forceRefresh"
+                    checked={forceRefresh}
+                    onChange={(e) => setForceRefresh(e.target.checked)}
+                    disabled={isLoading}
+                    style={{ cursor: 'pointer', accentColor: 'var(--accent-primary)' }}
+                />
+                <label htmlFor="forceRefresh" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                    Force Live Scrape (Bypass Cache)
+                </label>
+            </div>
 
             <div className="glass-card" style={{ marginTop: "2rem", padding: "1rem" }}>
                 <h3 style={{ fontSize: "0.875rem", display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem", color: "var(--text-secondary)" }}>

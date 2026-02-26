@@ -75,12 +75,20 @@ async def predict_sales(request_body: PredictRequest, request: Request):
 
         # ── Phase R3: Persist to DB ───────────────────────────────────────────
         _log_phase("R3", "Persist to DB", f"postcode={postcode}")
-        if session_factory:
-            with session_factory() as session:
-                repo = PostcodeRepository(session)
-                repo.save_scraped_result(postcode, features, display_data=display_data)
-                session.commit()
-            logger.info("  [PHASE R3] DB write complete")
+        
+        # Dual-validation check: Don't poison the DB cache if scrapers failed or choked
+        demographics_valid = features.get("population", 0) > 0 and features.get("de") is not None
+        crystalroof_valid = "transport" in display_data and isinstance(display_data["transport"], dict)
+        
+        if demographics_valid and crystalroof_valid:
+            if session_factory:
+                with session_factory() as session:
+                    repo = PostcodeRepository(session)
+                    repo.save_scraped_result(postcode, features, display_data=display_data)
+                    session.commit()
+                logger.info("  [PHASE R3] DB write complete")
+        else:
+            logger.warning("  [PHASE R3] Scrape returned partial or missing critical data. Bypassing Cache/DB.")
 
     if request_body.branch_name:
         features["Branch Name"] = request_body.branch_name

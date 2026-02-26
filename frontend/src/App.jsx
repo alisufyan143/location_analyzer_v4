@@ -13,7 +13,7 @@ function App() {
   const [error, setError] = useState(null)
   const [result, setResult] = useState(null)
 
-  const handlePredict = async (postcode) => {
+  const handlePredict = async (postcode, forceRefresh = false) => {
     if (!postcode.trim()) {
       setError("Please enter a valid UK postcode.")
       return
@@ -26,7 +26,8 @@ function App() {
 
     try {
       const response = await axios.post('http://127.0.0.1:8000/predict', {
-        postcode: postcode
+        postcode: postcode,
+        force_refresh: forceRefresh
       }, { timeout: 300000 })  // 5 min – scraping pipeline takes 60-90s
       setResult(response.data)
       setRequestComplete(true) // sync overlay: show 100% then hide
