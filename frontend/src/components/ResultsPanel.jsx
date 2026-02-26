@@ -1,6 +1,9 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { TrendingUp, ChevronDown, ChevronUp, Maximize2, Minimize2 } from 'lucide-react'
+import { TrendingUp, ChevronDown, ChevronUp, Maximize2, Minimize2, Download } from 'lucide-react'
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
+import ReportLayout from './ReportLayout';
 
 // ── Shared styles ─────────────────────────────────────────────────────────────
 const TABLE = { width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }
@@ -156,6 +159,37 @@ function CollapsiblePanel({ title, defaultOpen = true, children }) {
 export default function ResultsPanel({ result }) {
     const [granularity, setGranularity] = useState('monthly');
     const [isMinimized, setIsMinimized] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
+    const reportRef = useRef(null);
+
+    const exportToPDF = async () => {
+        if (!reportRef.current) return;
+        setIsExporting(true);
+        try {
+            // Temporarily make the off-screen element visible to html2canvas, but hidden via z-index
+            const el = reportRef.current;
+            const originalTop = el.style.top;
+            el.style.top = '0';
+            el.style.zIndex = '-100';
+
+            const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#0f172a' });
+            el.style.top = originalTop;
+
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF({
+                orientation: 'portrait',
+                unit: 'px',
+                format: [canvas.width / 2, canvas.height / 2] // Scale down canvas size to fit exactly
+            });
+
+            pdf.addImage(imgData, 'PNG', 0, 0, canvas.width / 2, canvas.height / 2);
+            pdf.save(`Location_Report_${result.postcode.replace(' ', '_')}.pdf`);
+        } catch (err) {
+            console.error('PDF Generation failed', err);
+        } finally {
+            setIsExporting(false);
+        }
+    };
 
     if (!result) return null
     const f = result.features
@@ -343,6 +377,24 @@ export default function ResultsPanel({ result }) {
                                             </button>
                                         ))}
                                     </div>
+
+                                    {/* Export PDF Button */}
+                                    <button
+                                        onClick={exportToPDF}
+                                        disabled={isExporting}
+                                        className="btn"
+                                        style={{
+                                            background: 'rgba(16, 185, 129, 0.2)', color: 'var(--accent-success)',
+                                            padding: '0.4rem 0.8rem', fontSize: '0.8rem',
+                                            border: '1px solid var(--accent-success)',
+                                            opacity: isExporting ? 0.7 : 1
+                                        }}
+                                        title="Export as PDF"
+                                    >
+                                        <Download size={16} />
+                                        {isExporting ? 'Generating...' : 'Export'}
+                                    </button>
+
                                     <button
                                         onClick={() => setIsMinimized(true)}
                                         className="btn"
@@ -486,7 +538,8 @@ export default function ResultsPanel({ result }) {
                 </>
             )}
 
+            {/* Hidden Report Template (Used for PDF Export) */}
+            <ReportLayout ref={reportRef} result={result} />
         </div>
     )
-
 }

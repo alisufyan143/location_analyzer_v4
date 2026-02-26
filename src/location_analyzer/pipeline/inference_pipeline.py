@@ -35,7 +35,13 @@ class InferencePipeline:
                     lng = data.get("longitude")
                     
                     if lat is not None and lng is not None:
-                        return {"lat": lat, "lng": lng}
+                        return {
+                            "lat": lat, 
+                            "lng": lng,
+                            "ward": data.get("admin_ward"),
+                            "district": data.get("admin_district"),
+                            "region": data.get("region")
+                        }
                     else:
                         logger.warning("Geocoding API returned 200 but missing lat/lng on attempt %d for %s", attempt, postcode)
                 elif resp.status_code == 404:
