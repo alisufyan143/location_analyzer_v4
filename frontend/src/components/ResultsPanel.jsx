@@ -257,7 +257,7 @@ export default function ResultsPanel({ result }) {
             overflowY: 'auto',
         }}>
 
-            {/* ── HEADER: Prediction + Full-Width Chart ──────────────────────── */}
+            {/* ── UPPER PANEL: Prediction Info & Large Graph ──────────────────────── */}
             <div style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '1.5rem' }}>
                 {/* Left: Prediction Number */}
                 <div style={{ minWidth: '220px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
@@ -284,75 +284,93 @@ export default function ResultsPanel({ result }) {
                     </p>
                 </div>
 
-                {/* Right: Full Width Area Chart */}
-                <div style={{ flex: 1, minHeight: '140px', position: 'relative' }}>
-                    {/* Granularity Toggle */}
-                    <div style={{
-                        position: 'absolute', top: 0, right: 0, zIndex: 10,
-                        display: 'flex', gap: '2px', background: 'rgba(255,255,255,0.05)',
-                        padding: '2px', borderRadius: '6px', border: '1px solid var(--border-color)'
-                    }}>
-                        {['daily', 'weekly', 'monthly'].map(mode => (
-                            <button
-                                key={mode}
-                                onClick={() => setGranularity(mode)}
-                                style={{
-                                    background: granularity === mode ? 'var(--accent-primary)' : 'transparent',
-                                    color: granularity === mode ? '#fff' : 'var(--text-secondary)',
-                                    border: 'none', padding: '0.2rem 0.6rem', borderRadius: '4px',
-                                    fontSize: '0.65rem', fontWeight: 600, cursor: 'pointer',
-                                    textTransform: 'capitalize', transition: 'all 0.2s'
-                                }}
-                            >
-                                {mode}
-                            </button>
-                        ))}
+                {/* Right: Large Horizontally-Scrollable Chart */}
+                <div style={{ flex: 1, minWidth: 0, position: 'relative', display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                        <span style={{ ...SECTION_TITLE, margin: 0, fontSize: '0.85rem' }}>12-Month Forecast Curve</span>
+                        {/* Granularity Toggle */}
+                        <div style={{
+                            display: 'flex', gap: '2px', background: 'rgba(255,255,255,0.05)',
+                            padding: '2px', borderRadius: '6px', border: '1px solid var(--border-color)'
+                        }}>
+                            {['daily', 'weekly', 'monthly'].map(mode => (
+                                <button
+                                    key={mode}
+                                    onClick={() => setGranularity(mode)}
+                                    style={{
+                                        background: granularity === mode ? 'var(--accent-primary)' : 'transparent',
+                                        color: granularity === mode ? '#fff' : 'var(--text-secondary)',
+                                        border: 'none', padding: '0.3rem 0.8rem', borderRadius: '4px',
+                                        fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer',
+                                        textTransform: 'capitalize', transition: 'all 0.2s'
+                                    }}
+                                >
+                                    {mode}
+                                </button>
+                            ))}
+                        </div>
                     </div>
 
-                    <div style={{ marginTop: '0.5rem' }}>
-                        <ResponsiveContainer width="100%" height={130}>
-                            <AreaChart data={chartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                                <defs>
-                                    <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="var(--accent-primary)" stopOpacity={0.7} />
-                                        <stop offset="95%" stopColor="var(--accent-primary)" stopOpacity={0} />
-                                    </linearGradient>
-                                </defs>
-                                <XAxis
-                                    dataKey="date"
-                                    tick={{ fontSize: 9, fill: 'var(--text-muted)' }}
-                                    axisLine={false}
-                                    tickLine={false}
-                                    minTickGap={granularity === 'daily' ? 40 : 30}
-                                    tickFormatter={xAxisFormatter}
-                                />
-                                <YAxis
-                                    tick={{ fontSize: 9, fill: 'var(--text-muted)' }}
-                                    axisLine={false} tickLine={false}
-                                    domain={['auto', 'auto']}
-                                    tickFormatter={v => v >= 1000 ? `£${(v / 1000).toFixed(1)}k` : `£${v}`}
-                                    width={40}
-                                />
-                                <Tooltip
-                                    contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '0.75rem' }}
-                                    formatter={v => [`£${v.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 'Projected Sales']}
-                                    labelStyle={{ color: 'var(--text-primary)' }}
-                                />
-                                <Area type="monotone" dataKey="predicted_sales" stroke="var(--accent-primary)" strokeWidth={2.5} fillOpacity={1} fill="url(#salesGrad)" />
-                            </AreaChart>
-                        </ResponsiveContainer>
+                    <div className="custom-scrollbar" style={{ overflowX: 'auto', paddingBottom: '0.5rem', flex: 1 }}>
+                        <div style={{
+                            height: '100%', minHeight: '220px',
+                            minWidth: granularity === 'daily' ? '3000px' : granularity === 'weekly' ? '1200px' : '100%'
+                        }}>
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={chartData} margin={{ top: 10, right: 30, left: -10, bottom: 0 }}>
+                                    <defs>
+                                        <linearGradient id="salesGradLarge" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="var(--accent-primary)" stopOpacity={0.6} />
+                                            <stop offset="95%" stopColor="var(--accent-primary)" stopOpacity={0} />
+                                        </linearGradient>
+                                    </defs>
+                                    <XAxis
+                                        dataKey="date"
+                                        tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                                        axisLine={false}
+                                        tickLine={false}
+                                        minTickGap={granularity === 'daily' ? 40 : 30}
+                                        tickFormatter={xAxisFormatter}
+                                        dy={10}
+                                    />
+                                    <YAxis
+                                        tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                                        axisLine={false} tickLine={false}
+                                        domain={['auto', 'auto']}
+                                        tickFormatter={v => v >= 1000 ? `£${(v / 1000).toFixed(1)}k` : `£${v}`}
+                                        width={45}
+                                    />
+                                    <Tooltip
+                                        cursor={{ stroke: 'rgba(255,255,255,0.1)', strokeWidth: 1, strokeDasharray: '3 3' }}
+                                        contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '0.8rem' }}
+                                        formatter={v => [`£${v.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 'Predicted Sales']}
+                                        labelStyle={{ color: 'var(--text-primary)', marginBottom: '0.25rem', fontWeight: 600 }}
+                                    />
+                                    <Area
+                                        type="monotone"
+                                        dataKey="predicted_sales"
+                                        stroke="var(--accent-primary)"
+                                        strokeWidth={3}
+                                        fillOpacity={1}
+                                        fill="url(#salesGradLarge)"
+                                        activeDot={{ r: 6, fill: 'var(--accent-primary)', stroke: '#fff', strokeWidth: 2 }}
+                                        dot={{ r: 3, fill: 'var(--bg-primary)', stroke: 'var(--accent-primary)', strokeWidth: 1.5 }}
+                                    />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            {/* ── BODY: 4-Column Data Grid ───────────────────────────────────── */}
+            {/* ── LOWER PANEL: 4-Column Data Grid ───────────────────────────── */}
             <div style={{
                 display: 'grid',
                 gridTemplateColumns: 'minmax(220px, 1fr) minmax(220px, 1.3fr) minmax(220px, 1fr) minmax(220px, 1.3fr)',
                 gap: '1.5rem',
             }}>
 
-                {/* ── Col 1: Postcode Demographics ──────────────────────── */}
+                {/* Col 1: Postcode Demographics */}
                 <div style={{ borderRight: '1px solid var(--border-color)', paddingRight: '1.5rem' }}>
                     <CollapsiblePanel title="Postcode Demographics">
                         <KVTable rows={DEMO_ROWS} />
@@ -376,7 +394,7 @@ export default function ResultsPanel({ result }) {
                     )}
                 </div>
 
-                {/* ── Col 2: Ethnicity / Religion / Age / Household ─────── */}
+                {/* Col 2: Ethnicity / Religion / Age / Household */}
                 <div style={{ borderRight: '1px solid var(--border-color)', paddingRight: '1.5rem' }}>
                     {hasNewFormat ? (
                         Object.entries(ethSections).map(([sectionName, rows]) => (
@@ -395,7 +413,7 @@ export default function ResultsPanel({ result }) {
                     )}
                 </div>
 
-                {/* ── Col 3: Amenities + Occupation Part 1 ──────────────── */}
+                {/* Col 3: Amenities + Occupation Part 1 */}
                 <div style={{ borderRight: '1px solid var(--border-color)', paddingRight: '1.5rem' }}>
                     {restaurants.length > 0 && (
                         <CollapsiblePanel title={`Restaurants (${restaurants.length})`}>
@@ -409,7 +427,7 @@ export default function ResultsPanel({ result }) {
                     )}
                 </div>
 
-                {/* ── Col 4: Occupation Part 2 ──────────────────────────── */}
+                {/* Col 4: Occupation Part 2 */}
                 <div>
                     {occRows.length > 0 && (
                         <CollapsiblePanel title="Occupation & Education" defaultOpen={true}>
@@ -417,84 +435,6 @@ export default function ResultsPanel({ result }) {
                             {otherOccRows.length > 0 && <BadgeTable rows={otherOccRows} />}
                         </CollapsiblePanel>
                     )}
-                </div>
-
-            </div>
-
-            {/* ── BOTTOM: Granular Prediction Chart ─────────────────────────── */}
-            <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1.5rem', marginTop: '1rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                    <span style={{...SECTION_TITLE, margin: 0, fontSize: '0.85rem'}}>12-Month Forecast Curve</span>
-                    <div style={{
-                        display: 'flex', gap: '2px', background: 'rgba(255,255,255,0.05)',
-                        padding: '2px', borderRadius: '6px', border: '1px solid var(--border-color)'
-                    }}>
-                        {['daily', 'weekly', 'monthly'].map(mode => (
-                            <button
-                                key={mode}
-                                onClick={() => setGranularity(mode)}
-                                style={{
-                                    background: granularity === mode ? 'var(--accent-primary)' : 'transparent',
-                                    color: granularity === mode ? '#fff' : 'var(--text-secondary)',
-                                    border: 'none', padding: '0.3rem 0.8rem', borderRadius: '4px',
-                                    fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer',
-                                    textTransform: 'capitalize', transition: 'all 0.2s'
-                                }}
-                            >
-                                {mode}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                <div style={{ overflowX: 'auto', paddingBottom: '0.5rem' }}>
-                    <div style={{ 
-                        height: 260, 
-                        minWidth: granularity === 'daily' ? '3000px' : granularity === 'weekly' ? '1200px' : '100%' 
-                    }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={chartData} margin={{ top: 10, right: 30, left: -10, bottom: 0 }}>
-                                <defs>
-                                    <linearGradient id="salesGradLarge" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="var(--accent-primary)" stopOpacity={0.6} />
-                                        <stop offset="95%" stopColor="var(--accent-primary)" stopOpacity={0} />
-                                    </linearGradient>
-                                </defs>
-                                <XAxis 
-                                    dataKey="date" 
-                                    tick={{ fontSize: 10, fill: 'var(--text-muted)' }} 
-                                    axisLine={false} 
-                                    tickLine={false} 
-                                    minTickGap={granularity === 'daily' ? 40 : 30} 
-                                    tickFormatter={xAxisFormatter}
-                                    dy={10}
-                                />
-                                <YAxis
-                                    tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-                                    axisLine={false} tickLine={false}
-                                    domain={['auto', 'auto']}
-                                    tickFormatter={v => v >= 1000 ? `£${(v / 1000).toFixed(1)}k` : `£${v}`}
-                                    width={45}
-                                />
-                                <Tooltip
-                                    cursor={{ stroke: 'rgba(255,255,255,0.1)', strokeWidth: 1, strokeDasharray: '3 3' }}
-                                    contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '0.8rem' }}
-                                    formatter={v => [`£${v.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 'Predicted Sales']}
-                                    labelStyle={{ color: 'var(--text-primary)', marginBottom: '0.25rem', fontWeight: 600 }}
-                                />
-                                <Area 
-                                    type="monotone" 
-                                    dataKey="predicted_sales" 
-                                    stroke="var(--accent-primary)" 
-                                    strokeWidth={3} 
-                                    fillOpacity={1} 
-                                    fill="url(#salesGradLarge)" 
-                                    activeDot={{ r: 6, fill: 'var(--accent-primary)', stroke: '#fff', strokeWidth: 2 }}
-                                    dot={{ r: 3, fill: 'var(--bg-primary)', stroke: 'var(--accent-primary)', strokeWidth: 1.5 }}
-                                />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
                 </div>
             </div>
 
