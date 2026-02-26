@@ -16,7 +16,9 @@ class PredictResponse(BaseModel):
     predicted_sales: float
     currency: str = "£"
     features: Dict[str, Any] = Field(..., description="The scraped/compiled features used by the ML model.")
+    display_data: Dict[str, Any] = Field(default_factory=dict, description="Rich CrystalRoof data for dashboard display (amenities, ethnicity, occupation, etc.).")
     time_series: List[TimeSeriesPrediction] = Field(default_factory=list, description="12-month forecasting predictions.")
+
     
     model_config = ConfigDict(
         json_schema_extra={

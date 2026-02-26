@@ -303,47 +303,83 @@ class CrystalRoofScraper(BaseScraper):
     def _parse_occupation(self, soup: BeautifulSoup) -> dict[str, Any]:
         """Parsed from /affluence?tab=occupation."""
         results = {}
-        # Find the specific section for occupations to avoid comparison bars
+        # Geographic/comparison row keywords to filter out
+        GEO_SKIP = [
+            "neighbourhood", "borough", "london", "immediate area",
+            "local authority", "midlands", "england", "region", "national",
+            "scotland", "wales", "uk average", "city", "district", "county",
+        ]
         items = soup.find_all("div", attrs={"data-bar-chart-item": True})
         for item in items:
             label_container = item.find("span", attrs={"data-bar-chart-label": True})
             value_el = item.find("span", attrs={"data-bar-chart-value": True})
-            
+
             if label_container and value_el:
                 # Get the nested span for the clean label
                 label_span = label_container.find("span", class_=re.compile("E8_D|E8_A"))
                 label = label_span.get_text(strip=True).lower() if label_span else label_container.get_text(strip=True).lower()
-                
-                # Ignore comparison labels like "neighbourhood of..." or geographical regions
-                if any(kw in label for kw in ["neighbourhood", "borough", "london", "immediate area"]):
+
+                # Ignore geographic comparison rows
+                if any(kw in label for kw in GEO_SKIP):
                     continue
-                    
+
                 pct = self.safe_float(value_el.get_text())
                 results[label] = pct
         return results
 
+    # ─── Ethnicity/demographics section keywords ─────────────
+    _RELIGION_KW  = {"christian", "muslim", "sikh", "hindu", "jewish", "buddhist",
+                     "no religion", "religion not stated", "other religion"}
+    _AGE_KW       = {"aged"}
+    _HOUSEHOLD_KW = {"families", "people living", "households", "extended families",
+                     "other family"}
+
+    @classmethod
+    def _classify_detail_row(cls, label: str) -> str:
+        """Return section name for an ethnicity-page row."""
+        l = label.lower()
+        if any(kw in l for kw in cls._AGE_KW):       return "Age"
+        if any(kw in l for kw in cls._HOUSEHOLD_KW): return "Household"
+        if any(kw in l for kw in cls._RELIGION_KW):  return "Religion"
+        return "Ethnicity"
+
+    @staticmethod
+    def _clean_detail_key(raw: str) -> str:
+        """Strip trailing percentage digits from label, e.g. 'white british32%' → 'White British'."""
+        cleaned = re.sub(r'[\d\.]+%?\s*$', '', raw).strip()
+        return cleaned.title() if cleaned else raw.title()
+
     def _parse_ethnicity(self, soup: BeautifulSoup) -> dict[str, Any]:
-        """Parsed from /demographics."""
-        results = {"white": 0.0, "non_white": 0.0, "details": {}}
+        """Parsed from /demographics. Returns categorized sections + top-level white/non_white."""
+        sections: dict[str, list[dict]] = {
+            "Ethnicity": [], "Religion": [], "Age": [], "Household": []
+        }
         items = soup.find_all("div", attrs={"data-bar-chart-item": True})
-        
+
         white_pct = 0.0
+        total_eth = 0.0  # for computing non-white from ethnicity section only
         for item in items:
             label_el = item.find("span", attrs={"data-bar-chart-label": True})
             value_el = item.find("span", attrs={"data-bar-chart-value": True})
-            if label_el and value_el:
-                label = label_el.get_text(strip=True).lower()
-                pct = self.safe_float(value_el.get_text())
-                results["details"][label] = pct
-                
-                if "white" in label and "mixed" not in label:
+            if not (label_el and value_el):
+                continue
+            raw_label = label_el.get_text(strip=True)
+            clean_label = self._clean_detail_key(raw_label)
+            pct = self.safe_float(value_el.get_text())
+            section = self._classify_detail_row(raw_label)
+            sections[section].append({"name": clean_label, "pct": pct})
+
+            if section == "Ethnicity":
+                total_eth += pct
+                if "white" in raw_label.lower() and "mixed" not in raw_label.lower():
                     white_pct += pct
-        
-        if white_pct > 0 or results["details"]:
-            results["white"] = round(white_pct / 100, 4)
-            results["non_white"] = round(max(0, 100 - white_pct) / 100, 4)
-            
-        return results
+
+        non_white_pct = max(0.0, total_eth - white_pct)
+        return {
+            "white":     round(white_pct   / 100, 4) if total_eth else 0.0,
+            "non_white": round(non_white_pct / 100, 4) if total_eth else 0.0,
+            "sections":  sections,
+        }
 
     # ─── Data Normalization ──────────────────────────────────
     

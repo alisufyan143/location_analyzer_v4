@@ -1,124 +1,368 @@
-import { BarChart, Bar, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
-import { TrendingUp, Users, Train, Briefcase } from 'lucide-react'
+import { useState } from 'react'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { TrendingUp, ChevronDown, ChevronUp } from 'lucide-react'
 
+// ── Shared styles ─────────────────────────────────────────────────────────────
+const TABLE = { width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }
+const TH = {
+    textAlign: 'left', padding: '0.35rem 0.6rem', color: 'var(--text-secondary)',
+    fontWeight: 600, borderBottom: '1px solid var(--border-color)',
+    fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em'
+}
+const THR = { ...TH, textAlign: 'right' }
+const TDL = { padding: '0.3rem 0.6rem', color: 'var(--text-secondary)', fontWeight: 500 }
+const TDV = { padding: '0.3rem 0.6rem', color: 'var(--text-primary)', fontWeight: 600, textAlign: 'right' }
+const ROW_E = { backgroundColor: 'rgba(255,255,255,0.03)' }
+const ROW_O = {}
+
+const SECTION_TITLE = {
+    fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)',
+    textTransform: 'uppercase', letterSpacing: '0.06em',
+    marginBottom: '0.5rem', marginTop: 0,
+}
+const PANEL = {
+    borderRadius: '10px',
+    border: '1px solid var(--border-color)',
+    padding: '0.75rem 1rem',
+    background: 'rgba(255,255,255,0.02)',
+    display: 'flex', flexDirection: 'column',
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function fmtPct(v) {
+    if (v === null || v === undefined) return '—'
+    // fraction 0–1 scale (Nomis scraper)
+    if (v <= 1.0) return `${(v * 100).toFixed(1)}%`
+    // already a percentage (CrystalRoof scraper)
+    return `${Number(v).toFixed(1)}%`
+}
+function fmtMoney(v) {
+    if (!v) return '—'
+    return `£${Number(v).toLocaleString()}`
+}
+
+const CLASS_COLORS = {
+    ab: '#2ecc71', 'c1/c2': '#3498db', de: '#e74c3c',
+    working: '#9b59b6', unemployed: '#e67e22',
+    white: '#95a5a6', 'non-white': '#1abc9c',
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function SectionTitle({ children }) {
+    return <h4 style={SECTION_TITLE}>{children}</h4>
+}
+
+/** Generic 2-col key/value table */
+function KVTable({ rows }) {
+    if (!rows.length) return <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>No data</p>
+    return (
+        <table style={TABLE}>
+            <thead><tr><th style={TH}>Field</th><th style={THR}>Value</th></tr></thead>
+            <tbody>
+                {rows.map(({ label, value }, i) => (
+                    <tr key={label} style={i % 2 === 0 ? ROW_E : ROW_O}>
+                        <td style={TDL}>{label}</td>
+                        <td style={TDV}>{value}</td>
+                    </tr>
+                ))}
+            </tbody>
+        </table>
+    )
+}
+
+/** Name + distance table (restaurants, pubs) */
+function PlaceTable({ items, colName }) {
+    if (!items || !items.length) return <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>No data</p>
+    return (
+        <table style={TABLE}>
+            <thead>
+                <tr>
+                    <th style={TH}>#</th>
+                    <th style={TH}>{colName}</th>
+                    <th style={THR}>Distance</th>
+                </tr>
+            </thead>
+            <tbody>
+                {items.map((item, i) => (
+                    <tr key={i} style={i % 2 === 0 ? ROW_E : ROW_O}>
+                        <td style={{ ...TDL, color: 'var(--text-muted)', width: '1.5rem' }}>{i + 1}</td>
+                        <td style={TDL}>{item.name}</td>
+                        <td style={TDV}>{item.distance}</td>
+                    </tr>
+                ))}
+            </tbody>
+        </table>
+    )
+}
+
+/** Colored badge percentage table (ethnicity, religion, age, household sections; occupation) */
+function BadgeTable({ rows, colorMap }) {
+    if (!rows || !rows.length) return <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>No data</p>
+    return (
+        <table style={TABLE}>
+            <thead>
+                <tr>
+                    <th style={TH}>#</th>
+                    <th style={TH}>Category</th>
+                    <th style={THR}>%</th>
+                </tr>
+            </thead>
+            <tbody>
+                {rows.map(({ name, pct }, i) => {
+                    const color = (colorMap && colorMap[name.toLowerCase()]) || 'var(--accent-primary)'
+                    const isSolid = pct >= 30
+                    return (
+                        <tr key={i} style={i % 2 === 0 ? ROW_E : ROW_O}>
+                            <td style={{ ...TDL, color: 'var(--text-muted)', width: '1.5rem' }}>{i + 1}</td>
+                            <td style={{ padding: '0.25rem 0.6rem' }}>
+                                <span style={{
+                                    display: 'inline-block', padding: '0.12rem 0.45rem',
+                                    borderRadius: '4px', fontSize: '0.76rem', fontWeight: 600,
+                                    backgroundColor: isSolid ? color : 'transparent',
+                                    color: isSolid ? '#fff' : color,
+                                    border: `1px solid ${color}`,
+                                }}>{name}</span>
+                            </td>
+                            <td style={TDV}>{Number(pct).toFixed(1)}%</td>
+                        </tr>
+                    )
+                })}
+            </tbody>
+        </table>
+    )
+}
+
+/** Collapsible section panel */
+function CollapsiblePanel({ title, defaultOpen = true, children }) {
+    const [open, setOpen] = useState(defaultOpen)
+    return (
+        <div style={{ ...PANEL, marginBottom: '0.75rem' }}>
+            <div
+                onClick={() => setOpen(o => !o)}
+                style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    cursor: 'pointer', userSelect: 'none', marginBottom: open ? '0.5rem' : 0
+                }}>
+                <span style={SECTION_TITLE}>{title}</span>
+                {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </div>
+            {open && children}
+        </div>
+    )
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
 export default function ResultsPanel({ result }) {
     if (!result) return null
-
     const f = result.features
+    const dd = result.display_data || {}
 
-    // Prepare a tiny overview chart of demographic makeup
-    const demoData = [
-        { name: 'Working', value: f.working || 0, color: 'var(--accent-primary)' },
-        { name: 'Unemployed', value: f.unemployed || 0, color: 'var(--accent-danger)' },
-        { name: 'AB Class', value: f.ab || 0, color: 'var(--accent-success)' },
-        { name: 'C1/C2 Class', value: f['c1/c2'] || 0, color: 'var(--accent-secondary)' },
-        { name: 'DE Class', value: f.de || 0, color: 'var(--accent-warning)' }
-    ].filter(d => d.value > 0)
+    // ── Demographics KV rows (always available from Nomis)
+    const DEMO_ROWS = [
+        { key: 'postcode', label: 'Postcode', fmt: v => v },
+        { key: 'population', label: 'Population', fmt: v => Number(v).toLocaleString() },
+        { key: 'households', label: 'Households', fmt: v => Number(v).toLocaleString() },
+        { key: 'avg_household_income', label: 'Avg Income', fmt: fmtMoney },
+        { key: 'working', label: 'Working', fmt: fmtPct },
+        { key: 'unemployed', label: 'Unemployed', fmt: fmtPct },
+        { key: 'ab', label: 'AB Class', fmt: fmtPct },
+        { key: 'c1/c2', label: 'C1/C2 Class', fmt: fmtPct },
+        { key: 'de', label: 'DE Class', fmt: fmtPct },
+        { key: 'white', label: 'White', fmt: fmtPct },
+        { key: 'non-white', label: 'Non-White', fmt: fmtPct },
+        { key: 'Transport_Accessibility_Score', label: 'Transport Score', fmt: v => `${v}/9` },
+        { key: 'Nearby_Station_Count', label: 'Nearby Stations', fmt: v => v },
+        { key: 'Distance_to_Nearest_Station', label: 'Nearest Station', fmt: v => `${Number(v).toFixed(2)} mi` },
+        { key: 'Nearest_Station_Type', label: 'Station Type', fmt: v => v },
+    ].filter(r => f[r.key] !== undefined && f[r.key] !== null)
+        .map(r => ({ label: r.label, value: r.fmt(f[r.key]) }))
+
+    // ── Affluence rating
+    const affluence = dd.affluence || {}
+
+    // ── Occupation rows (% values from CrystalRoof — already percentages 0–100)
+    const OCCI_LABELS = [
+        'managerial and professional',
+        'intermediate occupations',
+        'routine and manual',
+        'never worked, long-term unemployed',
+        'full-time students',
+        'university degree or higher',
+        'no qualification',
+        'college / a-levels',
+        'professional or trade training',
+        'high school graduate',
+        'some high school',
+        'other qualification',
+    ]
+    const occupation = dd.occupation || {}
+    const occRows = OCCI_LABELS
+        .filter(k => occupation[k] !== undefined)
+        .map(k => ({ name: k.replace(/\b\w/g, c => c.toUpperCase()), pct: occupation[k] }))
+    const otherOccRows = Object.entries(occupation)
+        .filter(([k]) => !OCCI_LABELS.includes(k))
+        .map(([k, v]) => ({ name: k.replace(/\b\w/g, c => c.toUpperCase()), pct: v }))
+
+    // ── Ethnicity sections (new structured format from fixed parser)
+    const ethnicity = dd.ethnicity || {}
+    const ethSections = ethnicity.sections || {}
+    // Legacy fallback: if old format (details dict), convert it
+    const hasNewFormat = !!ethnicity.sections
+
+    // ── Transport stations
+    const transport = dd.transport || {}
+    const stations = transport.stations || []
+    const stationRows = stations.map(s => ({
+        name: s.name,
+        pct: null,
+        distance: `${s.distance} mi`,
+        type: s.type,
+        lines: (s.lines || []).filter(Boolean).join(', '),
+    }))
+
+    // ── Restaurants / pubs
+    const amenities = dd.amenities || {}
+    const restaurants = amenities.restaurants || []
+    const pubs = amenities.pubs || []
 
     return (
         <div className="glass-panel animate-slide-up" style={{
-            position: 'absolute',
-            bottom: '2rem',
-            right: '2rem',
-            left: '2rem',
-            padding: '2rem',
-            display: 'grid',
-            gridTemplateColumns: '1fr 2fr',
-            gap: '2rem',
+            position: 'absolute', bottom: 0, right: 0, left: 0,
+            padding: '1.5rem 2rem',
+            display: 'flex', flexDirection: 'column',
+            gap: '1.5rem',
             zIndex: 1000,
+            maxHeight: '55vh',
+            overflowY: 'auto',
         }}>
 
-            {/* Left: Headline Prediction & 12 Month Chart */}
-            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', borderRight: '1px solid var(--border-color)', paddingRight: '2rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem', color: "var(--text-secondary)" }}>
-                    <TrendingUp size={24} color="var(--accent-success)" />
-                    <h2 style={{ fontSize: '1rem', fontWeight: 500, margin: 0 }}>Predicted Monthly Sales</h2>
+            {/* ── HEADER: Prediction + Full-Width Chart ──────────────────────── */}
+            <div style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '1.5rem' }}>
+                {/* Left: Prediction Number */}
+                <div style={{ minWidth: '220px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', color: 'var(--text-secondary)' }}>
+                        <TrendingUp size={20} color="var(--accent-success)" />
+                        <span style={{ fontSize: '0.8rem', fontWeight: 500 }}>Predicted Monthly Sales</span>
+                    </div>
+                    <div className="gradient-text" style={{ fontSize: '2.4rem', lineHeight: 1, fontWeight: 700 }}>
+                        {result.currency}{result.predicted_sales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                        {result.postcode}
+                        {affluence.rating && (
+                            <span style={{
+                                marginLeft: '0.75rem', padding: '0.1rem 0.5rem', borderRadius: '99px',
+                                background: 'rgba(255,255,255,0.08)', fontSize: '0.72rem',
+                                color: 'var(--accent-success)', fontWeight: 600
+                            }}>
+                                Affluence {affluence.rating}/10
+                            </span>
+                        )}
+                    </p>
                 </div>
-                <div className="value-highlight gradient-text" style={{ fontSize: '3.5rem', lineHeight: 1 }}>
-                    {result.currency}{result.predicted_sales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </div>
-                <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '0.5rem', marginBottom: '2rem' }}>
-                    For {result.postcode}
-                </p>
 
-                {/* 12-Month Projection Chart */}
+                {/* Right: Full Width Area Chart */}
                 {result.time_series && result.time_series.length > 0 && (
-                    <div style={{ height: '350px', width: '100%', marginTop: 'auto' }}>
-                        <h3 style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>12-Month Projection</h3>
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={result.time_series} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
+                    <div style={{ flex: 1, minHeight: '140px' }}>
+                        <ResponsiveContainer width="100%" height={140}>
+                            <AreaChart data={result.time_series} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
                                 <defs>
-                                    <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="var(--accent-primary)" stopOpacity={0.8} />
+                                    <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="var(--accent-primary)" stopOpacity={0.7} />
                                         <stop offset="95%" stopColor="var(--accent-primary)" stopOpacity={0} />
                                     </linearGradient>
                                 </defs>
-                                <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} minTickGap={30} />
-                                <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} domain={['auto', 'auto']} tickFormatter={(value) => `£${(value / 1000).toFixed(1)}k`} width={50} />
+                                <XAxis dataKey="date" tick={{ fontSize: 9, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} minTickGap={30} />
+                                <YAxis tick={{ fontSize: 9, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} domain={['auto', 'auto']} tickFormatter={v => `£${(v / 1000).toFixed(0)}k`} width={40} />
                                 <Tooltip
-                                    contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '0.875rem' }}
-                                    formatter={(value) => [`£${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 'Monthly Sales']}
+                                    contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '0.75rem' }}
+                                    formatter={v => [`£${v.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 'Sales']}
                                     labelStyle={{ color: 'var(--text-primary)' }}
                                 />
-                                <Area type="monotone" dataKey="predicted_sales" stroke="var(--accent-primary)" strokeWidth={3} fillOpacity={1} fill="url(#colorSales)" />
+                                <Area type="monotone" dataKey="predicted_sales" stroke="var(--accent-primary)" strokeWidth={2.5} fillOpacity={1} fill="url(#salesGrad)" />
                             </AreaChart>
                         </ResponsiveContainer>
                     </div>
                 )}
             </div>
 
-            {/* Right: Key Scraped Features mapped into a cool grid */}
-            <div>
-                <h3 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--text-primary)' }}>Location Profile</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+            {/* ── BODY: 4-Column Data Grid ───────────────────────────────────── */}
+            <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(220px, 1fr) minmax(220px, 1.3fr) minmax(220px, 1fr) minmax(220px, 1.3fr)',
+                gap: '1.5rem',
+            }}>
 
-                    <div className="glass-card" style={{ padding: '0.75rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
-                            <Users size={16} /> <span style={{ fontSize: '0.75rem' }}>Population</span>
-                        </div>
-                        <div style={{ fontSize: '1.25rem', fontWeight: 600 }}>
-                            {(f.population || 0).toLocaleString()}
-                        </div>
-                    </div>
+                {/* ── Col 1: Postcode Demographics ──────────────────────── */}
+                <div style={{ borderRight: '1px solid var(--border-color)', paddingRight: '1.5rem' }}>
+                    <CollapsiblePanel title="Postcode Demographics">
+                        <KVTable rows={DEMO_ROWS} />
+                    </CollapsiblePanel>
 
-                    <div className="glass-card" style={{ padding: '0.75rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
-                            <Briefcase size={16} /> <span style={{ fontSize: '0.75rem' }}>Avg Income</span>
-                        </div>
-                        <div style={{ fontSize: '1.25rem', fontWeight: 600 }}>
-                            £{(f.avg_household_income || 0).toLocaleString()}
-                        </div>
-                    </div>
-
-                    <div className="glass-card" style={{ padding: '0.75rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
-                            <Train size={16} /> <span style={{ fontSize: '0.75rem' }}>Transport Score</span>
-                        </div>
-                        <div style={{ fontSize: '1.25rem', fontWeight: 600 }}>
-                            {f.Transport_Accessibility_Score || 'N/A'}/10
-                        </div>
-                    </div>
-
+                    {stationRows.length > 0 && (
+                        <CollapsiblePanel title="Transport Stations">
+                            <table style={TABLE}>
+                                <thead><tr><th style={TH}>Station</th><th style={THR}>Dist</th><th style={THR}>Type</th></tr></thead>
+                                <tbody>
+                                    {stationRows.map((s, i) => (
+                                        <tr key={i} style={i % 2 === 0 ? ROW_E : ROW_O}>
+                                            <td style={TDL}>{s.name}</td>
+                                            <td style={TDV}>{s.distance}</td>
+                                            <td style={TDV}>{s.type}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </CollapsiblePanel>
+                    )}
                 </div>
 
-                {/* Mini Chart */}
-                <div style={{ height: '100px', width: '100%' }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={demoData} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
-                            <XAxis dataKey="name" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-                            <Tooltip
-                                cursor={{ fill: 'rgba(255,255,255,0.05)' }}
-                                contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '0.75rem' }}
-                            />
-                            <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                                {demoData.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={entry.color} />
-                                ))}
-                            </Bar>
-                        </BarChart>
-                    </ResponsiveContainer>
+                {/* ── Col 2: Ethnicity / Religion / Age / Household ─────── */}
+                <div style={{ borderRight: '1px solid var(--border-color)', paddingRight: '1.5rem' }}>
+                    {hasNewFormat ? (
+                        Object.entries(ethSections).map(([sectionName, rows]) => (
+                            rows && rows.length > 0 && (
+                                <CollapsiblePanel key={sectionName} title={sectionName} defaultOpen={sectionName === 'Ethnicity'}>
+                                    <BadgeTable rows={rows} />
+                                </CollapsiblePanel>
+                            )
+                        ))
+                    ) : (
+                        <CollapsiblePanel title="Demographics Breakdown">
+                            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                Detailed breakdown will appear on next refresh for this postcode.
+                            </p>
+                        </CollapsiblePanel>
+                    )}
                 </div>
+
+                {/* ── Col 3: Amenities + Occupation Part 1 ──────────────── */}
+                <div style={{ borderRight: '1px solid var(--border-color)', paddingRight: '1.5rem' }}>
+                    {restaurants.length > 0 && (
+                        <CollapsiblePanel title={`Restaurants (${restaurants.length})`}>
+                            <PlaceTable items={restaurants} colName="Restaurant" />
+                        </CollapsiblePanel>
+                    )}
+                    {pubs.length > 0 && (
+                        <CollapsiblePanel title={`Pubs & Bars (${pubs.length})`} defaultOpen={false}>
+                            <PlaceTable items={pubs} colName="Pub / Bar" />
+                        </CollapsiblePanel>
+                    )}
+                </div>
+
+                {/* ── Col 4: Occupation Part 2 ──────────────────────────── */}
+                <div>
+                    {occRows.length > 0 && (
+                        <CollapsiblePanel title="Occupation & Education" defaultOpen={true}>
+                            <BadgeTable rows={occRows} />
+                            {otherOccRows.length > 0 && <BadgeTable rows={otherOccRows} />}
+                        </CollapsiblePanel>
+                    )}
+                </div>
+
             </div>
         </div>
     )
+
 }

@@ -217,4 +217,4 @@ models/*.pkl
 THING TO INCLUDE !!!!
 Artifacts/
 notebooks/
-
+location_analyzer.db
