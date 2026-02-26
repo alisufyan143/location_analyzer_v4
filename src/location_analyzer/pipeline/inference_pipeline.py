@@ -19,16 +19,41 @@ class InferencePipeline:
         """Extracts the outercode from a standard UK format postcode."""
         return postcode.strip().split()[0].upper()
 
-    def _geocode_postcode(self, postcode: str) -> dict:
-        """Resolve postcode to lat/lng via the free postcodes.io API."""
-        try:
-            url = f"https://api.postcodes.io/postcodes/{postcode.replace(' ', '%20')}"
-            resp = requests.get(url, timeout=10)
-            if resp.status_code == 200:
-                data = resp.json().get("result", {})
-                return {"lat": data.get("latitude"), "lng": data.get("longitude")}
-        except Exception as e:
-            logger.warning("Geocoding failed for %s: %s", postcode, e)
+    def _geocode_postcode(self, postcode: str, max_retries: int = 5) -> dict:
+        """Resolve postcode to lat/lng via the free postcodes.io API with strict retries."""
+        import time
+        import random
+        
+        url = f"https://api.postcodes.io/postcodes/{postcode.replace(' ', '%20')}"
+        
+        for attempt in range(1, max_retries + 1):
+            try:
+                resp = requests.get(url, timeout=10)
+                if resp.status_code == 200:
+                    data = resp.json().get("result", {})
+                    lat = data.get("latitude")
+                    lng = data.get("longitude")
+                    
+                    if lat is not None and lng is not None:
+                        return {"lat": lat, "lng": lng}
+                    else:
+                        logger.warning("Geocoding API returned 200 but missing lat/lng on attempt %d for %s", attempt, postcode)
+                elif resp.status_code == 404:
+                    logger.warning("Geocoding API returned 404 (Not Found) for postcode %s", postcode)
+                    return {} # Permanent failure, don't retry a 404
+                else:
+                    logger.warning("Geocoding API returned HTTP %d on attempt %d for %s", resp.status_code, attempt, postcode)
+                    
+            except Exception as e:
+                logger.warning("Geocoding exception on attempt %d for %s: %s", attempt, postcode, e)
+                
+            if attempt < max_retries:
+                # Exponential backoff: 2s, 4s, 8s, 16s... + jitter
+                sleep_time = (2 ** attempt) + random.uniform(0, 1)
+                logger.info("Retrying geocoding for %s in %.1fs...", postcode, sleep_time)
+                time.sleep(sleep_time)
+                
+        logger.error("All %d geocoding attempts failed for %s. Map placement will be unavailable.", max_retries, postcode)
         return {}
 
     def _flatten_crystalroof(self, cr_data: dict) -> dict:

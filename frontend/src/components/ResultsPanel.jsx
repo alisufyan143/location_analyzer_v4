@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { TrendingUp, ChevronDown, ChevronUp } from 'lucide-react'
+import { TrendingUp, ChevronDown, ChevronUp, Maximize2, Minimize2 } from 'lucide-react'
 
 // ── Shared styles ─────────────────────────────────────────────────────────────
 const TABLE = { width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }
@@ -155,6 +155,7 @@ function CollapsiblePanel({ title, defaultOpen = true, children }) {
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function ResultsPanel({ result }) {
     const [granularity, setGranularity] = useState('monthly');
+    const [isMinimized, setIsMinimized] = useState(false);
 
     if (!result) return null
     const f = result.features
@@ -249,194 +250,241 @@ export default function ResultsPanel({ result }) {
     return (
         <div className="glass-panel animate-slide-up" style={{
             position: 'absolute', bottom: 0, right: 0, left: 0,
-            padding: '1.5rem 2rem',
+            padding: isMinimized ? '0.75rem 2rem' : '1.5rem 2rem',
             display: 'flex', flexDirection: 'column',
-            gap: '1.5rem',
+            gap: isMinimized ? '0' : '1.5rem',
             zIndex: 1000,
-            maxHeight: '55vh',
-            overflowY: 'auto',
+            maxHeight: isMinimized ? '80px' : '55vh',
+            overflowY: isMinimized ? 'hidden' : 'auto',
+            transition: 'all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)'
         }}>
 
-            {/* ── UPPER PANEL: Prediction Info & Large Graph ──────────────────────── */}
-            <div style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '1.5rem' }}>
-                {/* Left: Prediction Number */}
-                <div style={{ minWidth: '220px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', color: 'var(--text-secondary)' }}>
-                        <TrendingUp size={20} color="var(--accent-success)" />
-                        <span style={{ fontSize: '0.8rem', fontWeight: 500 }}>
-                            Predicted {granularity.charAt(0).toUpperCase() + granularity.slice(1)} Sales
-                        </span>
-                    </div>
-                    <div className="gradient-text" style={{ fontSize: '2.4rem', lineHeight: 1, fontWeight: 700 }}>
-                        {result.currency}{peakValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </div>
-                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                        {result.postcode}
-                        {affluence.rating && (
-                            <span style={{
-                                marginLeft: '0.75rem', padding: '0.1rem 0.5rem', borderRadius: '99px',
-                                background: 'rgba(255,255,255,0.08)', fontSize: '0.72rem',
-                                color: 'var(--accent-success)', fontWeight: 600
-                            }}>
-                                Affluence {affluence.rating}/10
+            {/* ── MINIMIZED STRIP ─────────────────────────────────────────────────── */}
+            {isMinimized && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)' }}>
+                            <TrendingUp size={18} color="var(--accent-success)" />
+                            <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>
+                                Predicted {granularity.charAt(0).toUpperCase() + granularity.slice(1)} Sales:
                             </span>
-                        )}
-                    </p>
-                </div>
-
-                {/* Right: Large Horizontally-Scrollable Chart */}
-                <div style={{ flex: 1, minWidth: 0, position: 'relative', display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                        <span style={{ ...SECTION_TITLE, margin: 0, fontSize: '0.85rem' }}>12-Month Forecast Curve</span>
-                        {/* Granularity Toggle */}
-                        <div style={{
-                            display: 'flex', gap: '2px', background: 'rgba(255,255,255,0.05)',
-                            padding: '2px', borderRadius: '6px', border: '1px solid var(--border-color)'
-                        }}>
-                            {['daily', 'weekly', 'monthly'].map(mode => (
-                                <button
-                                    key={mode}
-                                    onClick={() => setGranularity(mode)}
-                                    style={{
-                                        background: granularity === mode ? 'var(--accent-primary)' : 'transparent',
-                                        color: granularity === mode ? '#fff' : 'var(--text-secondary)',
-                                        border: 'none', padding: '0.3rem 0.8rem', borderRadius: '4px',
-                                        fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer',
-                                        textTransform: 'capitalize', transition: 'all 0.2s'
-                                    }}
-                                >
-                                    {mode}
-                                </button>
-                            ))}
+                        </div>
+                        <div className="gradient-text" style={{ fontSize: '1.25rem', fontWeight: 700 }}>
+                            {result.currency}{peakValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginLeft: '1rem', paddingLeft: '1rem', borderLeft: '1px solid var(--border-color)' }}>
+                            {result.postcode}
                         </div>
                     </div>
 
-                    <div className="custom-scrollbar" style={{ overflowX: 'auto', paddingBottom: '0.5rem', flex: 1 }}>
-                        <div style={{
-                            height: '100%', minHeight: '220px',
-                            minWidth: granularity === 'daily' ? '3000px' : granularity === 'weekly' ? '1200px' : '100%'
-                        }}>
-                            <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={chartData} margin={{ top: 10, right: 30, left: -10, bottom: 0 }}>
-                                    <defs>
-                                        <linearGradient id="salesGradLarge" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="var(--accent-primary)" stopOpacity={0.6} />
-                                            <stop offset="95%" stopColor="var(--accent-primary)" stopOpacity={0} />
-                                        </linearGradient>
-                                    </defs>
-                                    <XAxis
-                                        dataKey="date"
-                                        tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-                                        axisLine={false}
-                                        tickLine={false}
-                                        minTickGap={granularity === 'daily' ? 40 : 30}
-                                        tickFormatter={xAxisFormatter}
-                                        dy={10}
-                                    />
-                                    <YAxis
-                                        tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
-                                        axisLine={false} tickLine={false}
-                                        domain={['auto', 'auto']}
-                                        tickFormatter={v => v >= 1000 ? `£${(v / 1000).toFixed(1)}k` : `£${v}`}
-                                        width={45}
-                                    />
-                                    <Tooltip
-                                        cursor={{ stroke: 'rgba(255,255,255,0.1)', strokeWidth: 1, strokeDasharray: '3 3' }}
-                                        contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '0.8rem' }}
-                                        formatter={v => [`£${v.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 'Predicted Sales']}
-                                        labelStyle={{ color: 'var(--text-primary)', marginBottom: '0.25rem', fontWeight: 600 }}
-                                    />
-                                    <Area
-                                        type="monotone"
-                                        dataKey="predicted_sales"
-                                        stroke="var(--accent-primary)"
-                                        strokeWidth={3}
-                                        fillOpacity={1}
-                                        fill="url(#salesGradLarge)"
-                                        activeDot={{ r: 6, fill: 'var(--accent-primary)', stroke: '#fff', strokeWidth: 2 }}
-                                        dot={{ r: 3, fill: 'var(--bg-primary)', stroke: 'var(--accent-primary)', strokeWidth: 1.5 }}
-                                    />
-                                </AreaChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </div>
+                    <button
+                        onClick={() => setIsMinimized(false)}
+                        className="btn"
+                        style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)', padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
+                        title="Restore Panel"
+                    >
+                        <Maximize2 size={16} /> Maximize
+                    </button>
                 </div>
-            </div>
+            )}
 
-            {/* ── LOWER PANEL: 4-Column Data Grid ───────────────────────────── */}
-            <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'minmax(220px, 1fr) minmax(220px, 1.3fr) minmax(220px, 1fr) minmax(220px, 1.3fr)',
-                gap: '1.5rem',
-            }}>
-
-                {/* Col 1: Postcode Demographics */}
-                <div style={{ borderRight: '1px solid var(--border-color)', paddingRight: '1.5rem' }}>
-                    <CollapsiblePanel title="Postcode Demographics">
-                        <KVTable rows={DEMO_ROWS} />
-                    </CollapsiblePanel>
-
-                    {stationRows.length > 0 && (
-                        <CollapsiblePanel title="Transport Stations">
-                            <table style={TABLE}>
-                                <thead><tr><th style={TH}>Station</th><th style={THR}>Dist</th><th style={THR}>Type</th></tr></thead>
-                                <tbody>
-                                    {stationRows.map((s, i) => (
-                                        <tr key={i} style={i % 2 === 0 ? ROW_E : ROW_O}>
-                                            <td style={TDL}>{s.name}</td>
-                                            <td style={TDV}>{s.distance}</td>
-                                            <td style={TDV}>{s.type}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </CollapsiblePanel>
-                    )}
-                </div>
-
-                {/* Col 2: Ethnicity / Religion / Age / Household */}
-                <div style={{ borderRight: '1px solid var(--border-color)', paddingRight: '1.5rem' }}>
-                    {hasNewFormat ? (
-                        Object.entries(ethSections).map(([sectionName, rows]) => (
-                            rows && rows.length > 0 && (
-                                <CollapsiblePanel key={sectionName} title={sectionName} defaultOpen={sectionName === 'Ethnicity'}>
-                                    <BadgeTable rows={rows} />
-                                </CollapsiblePanel>
-                            )
-                        ))
-                    ) : (
-                        <CollapsiblePanel title="Demographics Breakdown">
-                            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                Detailed breakdown will appear on next refresh for this postcode.
+            {/* ── UPPER PANEL: Prediction Info & Large Graph ──────────────────────── */}
+            {!isMinimized && (
+                <>
+                    <div style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '1.5rem', position: 'relative' }}>
+                        {/* Left: Prediction Number */}
+                        <div style={{ minWidth: '220px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', color: 'var(--text-secondary)' }}>
+                                <TrendingUp size={20} color="var(--accent-success)" />
+                                <span style={{ fontSize: '0.8rem', fontWeight: 500 }}>
+                                    Predicted {granularity.charAt(0).toUpperCase() + granularity.slice(1)} Sales
+                                </span>
+                            </div>
+                            <div className="gradient-text" style={{ fontSize: '2.4rem', lineHeight: 1, fontWeight: 700 }}>
+                                {result.currency}{peakValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                                {result.postcode}
+                                {affluence.rating && (
+                                    <span style={{
+                                        marginLeft: '0.75rem', padding: '0.1rem 0.5rem', borderRadius: '99px',
+                                        background: 'rgba(255,255,255,0.08)', fontSize: '0.72rem',
+                                        color: 'var(--accent-success)', fontWeight: 600
+                                    }}>
+                                        Affluence {affluence.rating}/10
+                                    </span>
+                                )}
                             </p>
-                        </CollapsiblePanel>
-                    )}
-                </div>
+                        </div>
 
-                {/* Col 3: Amenities + Occupation Part 1 */}
-                <div style={{ borderRight: '1px solid var(--border-color)', paddingRight: '1.5rem' }}>
-                    {restaurants.length > 0 && (
-                        <CollapsiblePanel title={`Restaurants (${restaurants.length})`}>
-                            <PlaceTable items={restaurants} colName="Restaurant" />
-                        </CollapsiblePanel>
-                    )}
-                    {pubs.length > 0 && (
-                        <CollapsiblePanel title={`Pubs & Bars (${pubs.length})`} defaultOpen={false}>
-                            <PlaceTable items={pubs} colName="Pub / Bar" />
-                        </CollapsiblePanel>
-                    )}
-                </div>
+                        {/* Right: Large Horizontally-Scrollable Chart */}
+                        <div style={{ flex: 1, minWidth: 0, position: 'relative', display: 'flex', flexDirection: 'column' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                <span style={{ ...SECTION_TITLE, margin: 0, fontSize: '0.85rem' }}>12-Month Forecast Curve</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                    {/* Granularity Toggle */}
+                                    <div style={{
+                                        display: 'flex', gap: '2px', background: 'rgba(255,255,255,0.05)',
+                                        padding: '2px', borderRadius: '6px', border: '1px solid var(--border-color)'
+                                    }}>
+                                        {['daily', 'weekly', 'monthly'].map(mode => (
+                                            <button
+                                                key={mode}
+                                                onClick={() => setGranularity(mode)}
+                                                style={{
+                                                    background: granularity === mode ? 'var(--accent-primary)' : 'transparent',
+                                                    color: granularity === mode ? '#fff' : 'var(--text-secondary)',
+                                                    border: 'none', padding: '0.3rem 0.8rem', borderRadius: '4px',
+                                                    fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer',
+                                                    textTransform: 'capitalize', transition: 'all 0.2s'
+                                                }}
+                                            >
+                                                {mode}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <button
+                                        onClick={() => setIsMinimized(true)}
+                                        className="btn"
+                                        style={{
+                                            background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)',
+                                            padding: '0.4rem 0.8rem', fontSize: '0.8rem'
+                                        }}
+                                        title="Minimize Panel"
+                                    >
+                                        <Minimize2 size={16} /> Hide
+                                    </button>
+                                </div>
+                            </div>
 
-                {/* Col 4: Occupation Part 2 */}
-                <div>
-                    {occRows.length > 0 && (
-                        <CollapsiblePanel title="Occupation & Education" defaultOpen={true}>
-                            <BadgeTable rows={occRows} />
-                            {otherOccRows.length > 0 && <BadgeTable rows={otherOccRows} />}
-                        </CollapsiblePanel>
-                    )}
-                </div>
-            </div>
+                            <div className="custom-scrollbar" style={{ overflowX: 'auto', paddingBottom: '0.5rem', flex: 1 }}>
+                                <div style={{
+                                    height: '100%', minHeight: '220px',
+                                    minWidth: granularity === 'daily' ? '3000px' : granularity === 'weekly' ? '1200px' : '100%'
+                                }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <AreaChart data={chartData} margin={{ top: 10, right: 30, left: -10, bottom: 0 }}>
+                                            <defs>
+                                                <linearGradient id="salesGradLarge" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="5%" stopColor="var(--accent-primary)" stopOpacity={0.6} />
+                                                    <stop offset="95%" stopColor="var(--accent-primary)" stopOpacity={0} />
+                                                </linearGradient>
+                                            </defs>
+                                            <XAxis
+                                                dataKey="date"
+                                                tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                                                axisLine={false}
+                                                tickLine={false}
+                                                minTickGap={granularity === 'daily' ? 40 : 30}
+                                                tickFormatter={xAxisFormatter}
+                                                dy={10}
+                                            />
+                                            <YAxis
+                                                tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                                                axisLine={false} tickLine={false}
+                                                domain={['auto', 'auto']}
+                                                tickFormatter={v => v >= 1000 ? `£${(v / 1000).toFixed(1)}k` : `£${v}`}
+                                                width={45}
+                                            />
+                                            <Tooltip
+                                                cursor={{ stroke: 'rgba(255,255,255,0.1)', strokeWidth: 1, strokeDasharray: '3 3' }}
+                                                contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '0.8rem' }}
+                                                formatter={v => [`£${v.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 'Predicted Sales']}
+                                                labelStyle={{ color: 'var(--text-primary)', marginBottom: '0.25rem', fontWeight: 600 }}
+                                            />
+                                            <Area
+                                                type="monotone"
+                                                dataKey="predicted_sales"
+                                                stroke="var(--accent-primary)"
+                                                strokeWidth={3}
+                                                fillOpacity={1}
+                                                fill="url(#salesGradLarge)"
+                                                activeDot={{ r: 6, fill: 'var(--accent-primary)', stroke: '#fff', strokeWidth: 2 }}
+                                                dot={{ r: 3, fill: 'var(--bg-primary)', stroke: 'var(--accent-primary)', strokeWidth: 1.5 }}
+                                            />
+                                        </AreaChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* ── LOWER PANEL: 4-Column Data Grid ───────────────────────────── */}
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'minmax(220px, 1fr) minmax(220px, 1.3fr) minmax(220px, 1fr) minmax(220px, 1.3fr)',
+                        gap: '1.5rem',
+                    }}>
+
+                        {/* Col 1: Postcode Demographics */}
+                        <div style={{ borderRight: '1px solid var(--border-color)', paddingRight: '1.5rem' }}>
+                            <CollapsiblePanel title="Postcode Demographics">
+                                <KVTable rows={DEMO_ROWS} />
+                            </CollapsiblePanel>
+
+                            {stationRows.length > 0 && (
+                                <CollapsiblePanel title="Transport Stations">
+                                    <table style={TABLE}>
+                                        <thead><tr><th style={TH}>Station</th><th style={THR}>Dist</th><th style={THR}>Type</th></tr></thead>
+                                        <tbody>
+                                            {stationRows.map((s, i) => (
+                                                <tr key={i} style={i % 2 === 0 ? ROW_E : ROW_O}>
+                                                    <td style={TDL}>{s.name}</td>
+                                                    <td style={TDV}>{s.distance}</td>
+                                                    <td style={TDV}>{s.type}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </CollapsiblePanel>
+                            )}
+                        </div>
+
+                        {/* Col 2: Ethnicity / Religion / Age / Household */}
+                        <div style={{ borderRight: '1px solid var(--border-color)', paddingRight: '1.5rem' }}>
+                            {hasNewFormat ? (
+                                Object.entries(ethSections).map(([sectionName, rows]) => (
+                                    rows && rows.length > 0 && (
+                                        <CollapsiblePanel key={sectionName} title={sectionName} defaultOpen={sectionName === 'Ethnicity'}>
+                                            <BadgeTable rows={rows} />
+                                        </CollapsiblePanel>
+                                    )
+                                ))
+                            ) : (
+                                <CollapsiblePanel title="Demographics Breakdown">
+                                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                        Detailed breakdown will appear on next refresh for this postcode.
+                                    </p>
+                                </CollapsiblePanel>
+                            )}
+                        </div>
+
+                        {/* Col 3: Amenities + Occupation Part 1 */}
+                        <div style={{ borderRight: '1px solid var(--border-color)', paddingRight: '1.5rem' }}>
+                            {restaurants.length > 0 && (
+                                <CollapsiblePanel title={`Restaurants (${restaurants.length})`}>
+                                    <PlaceTable items={restaurants} colName="Restaurant" />
+                                </CollapsiblePanel>
+                            )}
+                            {pubs.length > 0 && (
+                                <CollapsiblePanel title={`Pubs & Bars (${pubs.length})`} defaultOpen={false}>
+                                    <PlaceTable items={pubs} colName="Pub / Bar" />
+                                </CollapsiblePanel>
+                            )}
+                        </div>
+
+                        {/* Col 4: Occupation Part 2 */}
+                        <div>
+                            {occRows.length > 0 && (
+                                <CollapsiblePanel title="Occupation & Education" defaultOpen={true}>
+                                    <BadgeTable rows={occRows} />
+                                    {otherOccRows.length > 0 && <BadgeTable rows={otherOccRows} />}
+                                </CollapsiblePanel>
+                            )}
+                        </div>
+                    </div>
+                </>
+            )}
 
         </div>
     )
