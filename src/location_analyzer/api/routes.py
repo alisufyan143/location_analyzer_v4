@@ -48,8 +48,10 @@ async def predict_sales(request_body: PredictRequest, request: Request):
     display_data    = {}
 
     # ── Phase R1: DB Cache Lookup ─────────────────────────────────────────────
+    source_type = "live_scrape"
+    
     _log_phase("R1", "DB Cache Lookup", f"postcode={postcode}")
-    if session_factory:
+    if session_factory and not request_body.force_refresh:
         with session_factory() as session:
             repo     = PostcodeRepository(session)
             features = repo.get_features_for_postcode(postcode)
@@ -61,6 +63,7 @@ async def predict_sales(request_body: PredictRequest, request: Request):
             with session_factory() as session:
                 repo = PostcodeRepository(session)
                 display_data = repo.get_display_data(postcode)
+        source_type = "database_cache"
         logger.info("  [PHASE R1] DB HIT -- skipping live scrape")
     else:
         # DB miss — run scrapers
@@ -202,6 +205,7 @@ async def predict_sales(request_body: PredictRequest, request: Request):
 
     return PredictResponse(
         postcode=postcode,
+        source=source_type,
         predicted_sales=monthly_ts[0].predicted_sales,
         features=features,
         display_data=display_data,

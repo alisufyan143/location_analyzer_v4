@@ -4,27 +4,6 @@
 
 Location Analyzer v2 is a decoupled, full-stack ML application. It utilizes separate microservices for data extraction, inference generation, and data visualization.
 
-```text
-┌────────────────────────────────────────────────────────┐
-│                   React + Vite (Frontend Layer)        │
-│    Data Vis: Recharts   |   Geospatial: React-Leaflet  │
-└───────────────────────┬────────────────────────────────┘
-                        │ HTTP JSON (Axios)
-               ┌────────▼────────┐
-               │ FastAPI API     │
-               │ POST /predict   │
-               └────────┬────────┘
-                        │
-       ┌────────────────┴────────────────┐
-       ▼                                 ▼
-┌──────────────┐                  ┌──────────────┐
-│ Playwright   │                  │ XGBoost ML   │
-│ Scrapers     │                  │ Inference    │
-│ (Extraction) │                  │ (Prediction) │
-└──────┬───────┘                  └──────┬───────┘
-       │                                 │
-       ▼                                 ▼
-┌──────────────┐                  ┌──────────────┐
 │.co.uk URLs   │                  │.pkl Artifacts│
 └──────────────┘                  └──────────────┘
 ```

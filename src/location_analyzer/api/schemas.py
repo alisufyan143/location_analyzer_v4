@@ -20,6 +20,7 @@ class GranularTimeSeries(BaseModel):
 class PredictResponse(BaseModel):
     """Response schema returning the £ sales prediction and the features used."""
     postcode: str
+    source: str = Field(..., description="Indicates whether the data came from a 'live_scrape' or 'database_cache'")
     predicted_sales: float
     currency: str = "£"
     features: Dict[str, Any] = Field(..., description="The scraped/compiled features used by the ML model.")

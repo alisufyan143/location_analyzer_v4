@@ -64,6 +64,14 @@ npm run dev
 
 Visit the local URL (usually `http://localhost:5173`) in your browser to interact with the Dashboard.
 
+### 🐳 3️⃣ Deploy with Docker Compose (Production Ready)
+Instead of manually installing dependencies, you can launch the entire ecosystem (ML Engine + React App + SQLite) in one command:
+```bash
+# From the root of the repository
+docker-compose up --build
+```
+The React App builds using a multi-stage Nginx container (serving on Port `5173`), and the Python API boots a headless Chromium instance for scraping before serving on Port `8000`.
+
 ---
 
 ## 🎨 Dashboard UX & Features
