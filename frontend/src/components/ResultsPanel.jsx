@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { TrendingUp, ChevronDown, ChevronUp, Maximize2, Minimize2, Download } from 'lucide-react'
+import { TrendingUp, ChevronDown, ChevronUp, Maximize2, Minimize2, Download, BarChart2 } from 'lucide-react'
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import ReportLayout from './ReportLayout';
@@ -160,6 +160,7 @@ export default function ResultsPanel({ result }) {
     const [granularity, setGranularity] = useState('monthly');
     const [isMinimized, setIsMinimized] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
+    const [isExportingHTML, setIsExportingHTML] = useState(false);
     const reportRef = useRef(null);
 
     const exportToPDF = async () => {
@@ -188,6 +189,51 @@ export default function ResultsPanel({ result }) {
             console.error('PDF Generation failed', err);
         } finally {
             setIsExporting(false);
+        }
+    };
+
+    const exportToHTML = async () => {
+        setIsExportingHTML(true);
+        try {
+            const exportGranularity = 'weekly';
+            const currentChartData = result.time_series?.[exportGranularity] || [];
+            if (!currentChartData.length) return;
+
+            const dates = currentChartData.map(d => d.date);
+            const sales = currentChartData.map(d => d.predicted_sales);
+
+            const payload = {
+                postcode: result.postcode,
+                dates,
+                sales,
+                granularity: exportGranularity,
+                features: result.features || {},
+                display_data: result.display_data || {}
+            };
+
+            const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/export-plot`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) throw new Error('Failed to generate HTML plot');
+
+            const htmlContent = await response.text();
+            const blob = new Blob([htmlContent], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Interactive_Report_${result.postcode.replace(' ', '_')}.html`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error('HTML Export failed', err);
+        } finally {
+            setIsExportingHTML(false);
         }
     };
 
@@ -393,6 +439,23 @@ export default function ResultsPanel({ result }) {
                                     >
                                         <Download size={16} />
                                         {isExporting ? 'Generating...' : 'Export'}
+                                    </button>
+
+                                    {/* Export Interactive HTML Button */}
+                                    <button
+                                        onClick={exportToHTML}
+                                        disabled={isExportingHTML}
+                                        className="btn"
+                                        style={{
+                                            background: 'rgba(59, 130, 246, 0.2)', color: 'var(--accent-info, #3b82f6)',
+                                            padding: '0.4rem 0.8rem', fontSize: '0.8rem',
+                                            border: '1px solid var(--accent-info, #3b82f6)',
+                                            opacity: isExportingHTML ? 0.7 : 1
+                                        }}
+                                        title="Export Interactive Plot (HTML)"
+                                    >
+                                        <BarChart2 size={16} />
+                                        {isExportingHTML ? 'Generating...' : 'Interactive Plot'}
                                     </button>
 
                                     <button

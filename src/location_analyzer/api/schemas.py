@@ -17,6 +17,15 @@ class GranularTimeSeries(BaseModel):
     weekly: List[TimeSeriesPrediction]
     monthly: List[TimeSeriesPrediction]
 
+class PlotExportRequest(BaseModel):
+    """Request schema for HTML Bokeh plot generation."""
+    postcode: str = Field(..., description="The postcode to use for the title")
+    dates: List[str] = Field(..., description="X-axis dates/labels")
+    sales: List[float] = Field(..., description="Y-axis predicted sales")
+    granularity: str = Field("Monthly", description="The current view granularity (Daily, Weekly, Monthly)")
+    features: Dict[str, Any] = Field(default_factory=dict, description="Model features")
+    display_data: Dict[str, Any] = Field(default_factory=dict, description="Display data (demographics, ethnicity, etc)")
+
 class PredictResponse(BaseModel):
     """Response schema returning the £ sales prediction and the features used."""
     postcode: str
