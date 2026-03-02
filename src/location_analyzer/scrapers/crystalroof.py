@@ -40,6 +40,10 @@ class CrystalRoofScraper(BaseScraper):
     CACHE_CATEGORY = "crystal"
     BASE_URL = "https://crystalroof.co.uk/report/postcode"
 
+    def __init__(self, headless: bool = True):
+        super().__init__()
+        self.headless = headless
+
     def scrape(self, postcode: str) -> dict[str, Any]:
         """
         Scrape all CrystalRoof sections for a postcode.
@@ -58,7 +62,7 @@ class CrystalRoofScraper(BaseScraper):
         }
 
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(headless=self.headless)
             # Use a fresh context per postcode to avoid session/modal persistent issues
             context = browser.new_context(
                 user_agent=self._ua.random,
