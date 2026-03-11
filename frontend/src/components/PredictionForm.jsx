@@ -3,11 +3,12 @@ import { Search, Info } from 'lucide-react'
 
 export default function PredictionForm({ onPredict, isLoading }) {
     const [postcode, setPostcode] = useState('')
+    const [branchName, setBranchName] = useState('')
     const [forceRefresh, setForceRefresh] = useState(false)
 
     const handleSubmit = (e) => {
         e.preventDefault()
-        onPredict(postcode, forceRefresh)
+        onPredict(postcode, branchName, forceRefresh)
     }
 
     return (
@@ -26,10 +27,22 @@ export default function PredictionForm({ onPredict, isLoading }) {
                 />
             </div>
 
+            <div className="input-group" style={{ marginTop: "1rem" }}>
+                <label className="label">Branch Name (Optional)</label>
+                <input
+                    type="text"
+                    className="input-field"
+                    placeholder="e.g. Pepe's Piri Piri"
+                    value={branchName}
+                    onChange={(e) => setBranchName(e.target.value)}
+                    disabled={isLoading}
+                />
+            </div>
+
             <button
                 type="submit"
                 className="btn btn-primary"
-                style={{ width: "100%", marginTop: "1rem" }}
+                style={{ width: "100%", marginTop: "1.5rem" }}
                 disabled={isLoading || !postcode.trim()}
             >
                 {isLoading ? (
@@ -45,7 +58,7 @@ export default function PredictionForm({ onPredict, isLoading }) {
                 )}
             </button>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1rem', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1.25rem', justifyContent: 'center' }}>
                 <input
                     type="checkbox"
                     id="forceRefresh"

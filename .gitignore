@@ -209,7 +209,14 @@ test_proxy_browser.py
 test_proxy_check.py
 data/
 node_modules/
-scripts/
+# Scripts
+scripts/*
+!scripts/run_v3_pipeline.py
+!scripts/test_v3_api.py
+!scripts/engineer_brand_maturity.py
+!scripts/cpi_stage*.py
+
+
 xgboost_model_without_crystal_radius_1.61_april_2025.pkl
 debug_import.py
 pytest_error.txt
@@ -219,3 +226,5 @@ Artifacts/
 notebooks/
 location_analyzer.db
 Dataset/
+tmp/
+models/

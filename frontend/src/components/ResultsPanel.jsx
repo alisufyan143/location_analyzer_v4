@@ -262,6 +262,8 @@ export default function ResultsPanel({ result }) {
     // ── Demographics KV rows (always available from Nomis)
     const DEMO_ROWS = [
         { key: 'postcode', label: 'Postcode', fmt: v => v },
+        { key: 'Branch Name', label: 'Branch', fmt: v => v },
+        { key: 'Inferred_Brand', label: 'Brand', fmt: v => v },
         { key: 'population', label: 'Population', fmt: v => Number(v).toLocaleString() },
         { key: 'households', label: 'Households', fmt: v => Number(v).toLocaleString() },
         { key: 'avg_household_income', label: 'Avg Income', fmt: fmtMoney },
@@ -353,7 +355,7 @@ export default function ResultsPanel({ result }) {
                             {result.currency}{peakValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
                         <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginLeft: '1rem', paddingLeft: '1rem', borderLeft: '1px solid var(--border-color)' }}>
-                            {result.postcode}
+                            {f["Branch Name"] && `${f["Branch Name"]} - `}{result.postcode}
                         </div>
                     </div>
 

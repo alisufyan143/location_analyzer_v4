@@ -98,7 +98,7 @@ async def predict_sales(request_body: PredictRequest, request: Request):
         features["Branch Name"] = request_body.branch_name
 
     # ── Phase R5: ML Inference (12-month time series) ─────────────────────────
-    _log_phase("R5", "ML Model Inference", f"features_count={len(features)}")
+    _log_phase("R5", "V3 ML Model Inference", f"features_count={len(features)}")
 
     import pandas as pd
     from datetime import timedelta
@@ -106,7 +106,6 @@ async def predict_sales(request_body: PredictRequest, request: Request):
 
     now = datetime.now()
     # Daily sequence: Today until end of Month 12
-    # End date is start of Month 13 - 1 day
     end_month_date = now + pd.DateOffset(months=12)
     last_day_of_12th = datetime(end_month_date.year, end_month_date.month, 1) + pd.DateOffset(months=1) - timedelta(days=1)
     
@@ -117,13 +116,12 @@ async def predict_sales(request_body: PredictRequest, request: Request):
         daily_dates.append(curr)
         curr += timedelta(days=1)
         
-    # 2. Prepare features for every single day
-    pred_features = []
-    for d in daily_dates:
-        pred_features.append({**features.copy(), "Date": d.strftime("%Y-%m-%d")})
+    # 2. Prepare features + dates for V3 service (one shared feature dict, many dates)
+    pred_features = [features.copy() for _ in daily_dates]
+    pred_date_strings = [d.strftime("%Y-%m-%d") for d in daily_dates]
         
-    # 3. Batch predict all ~365 days
-    raw_preds = model_service.predict(pred_features)
+    # 3. Batch predict all ~365 days (V3: returns nominal CPI-inflated £)
+    raw_preds = model_service.predict(pred_features, prediction_dates=pred_date_strings)
     
     # 4. Build daily sequence
     daily_ts = []

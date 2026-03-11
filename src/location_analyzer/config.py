@@ -104,6 +104,8 @@ class MLSettings(BaseSettings):
     """Machine learning configuration."""
 
     models_dir: str = "models"
+    v3_models_dir: str = "models/v3"
+    cpi_data_path: str = "models/v3/cpi_d7ew_restaurants.csv"
     default_metric: str = "rmse"
 
     model_config = SettingsConfigDict(env_prefix="ML_")

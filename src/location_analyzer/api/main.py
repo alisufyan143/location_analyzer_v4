@@ -5,7 +5,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from location_analyzer.api.routes import router
-from location_analyzer.ml.predict import PredictionService
+from location_analyzer.ml.predict_v3 import V3PredictionService  # V3 Enterprise Pipeline
+# from location_analyzer.ml.predict import PredictionService  # V1 (kept for rollback)
 from location_analyzer.config import settings
 from location_analyzer.data.database import create_db_engine, create_session_factory, init_db
 from location_analyzer.logging_config import setup_logging
@@ -31,13 +32,14 @@ async def lifespan(app: FastAPI):
         app.state.session_factory = None
 
     # ML model (loaded once)
-    model_dir = settings.ml.models_dir
-    logger.info("Initializing PredictionService from %s...", model_dir)
+    model_dir = settings.ml.v3_models_dir
+    cpi_path = settings.ml.cpi_data_path
+    logger.info("Initializing V3PredictionService from %s...", model_dir)
     try:
-        app.state.model_service = PredictionService(model_dir=str(model_dir))
-        logger.info("PredictionService initialized successfully.")
+        app.state.model_service = V3PredictionService(model_dir=str(model_dir), cpi_path=str(cpi_path))
+        logger.info("V3PredictionService initialized successfully.")
     except Exception as e:
-        logger.error("Failed to initialize PredictionService: %s", e)
+        logger.error("Failed to initialize V3PredictionService: %s", e)
         app.state.model_service = None
 
     yield
