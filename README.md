@@ -1,108 +1,106 @@
-# 📍 Location Analyzer v2
+# 📍 Location Analyzer v3: Enterprise Edition
 
-> **Production-grade UK postcode analysis tool powering strategic retail expansion.**
-> Features live dual-source demographic scraping, a 4-Engine Median Ensemble Machine Learning pipeline (XGBoost, LightGBM, CatBoost, Random Forest) for Time-Series sales forecasting, and an interactive React dashboard.
+> **The next generation of high-fidelity UK retail sales forecasting.**
+> Powered by a triple-engine Meta-Ensemble (XGBoost + ExtraTrees + PyTorch TabNet), real ONS CPI inflation data, and resilient CUDA-accelerated inference.
 
 ---
 
 ## 🚀 Overview
 
-**Location Analyzer v2** is a robust Full-Stack AI application designed to evaluate the commercial potential of UK postcodes for new retail branches. By aggregating live data from demographic & transport sources (StreetCheck, CrystalRoof) and piping it through an advanced Machine Learning pipeline, it outputs highly accurate £ Sales Revenue projections.
+**Location Analyzer v3** is a state-of-the-art predictive engine designed to determine the exact commercial viability of UK retail locations. It transforms raw postcodes into detailed 12-month revenue forecasts by orchestrating live demographic scraping, geocoding, and a heavily engineered machine learning pipeline.
 
-### Key Capabilities
-*   **🕸️ Resilient Live Scraping**: Async Playwright Orchestration scraping `postcodearea.co.uk` and `crystalroof.com` simultaneously upon user request.
-*   **🤖 Median Ensemble Forecasting**: Evaluates 12+ demographic features, applies rigorous Scikit-Learn transformations, and generates a 12-month trailing sales forecast by aggregating predictions from XGBoost, LightGBM, CatBoost, and Random Forest engines.
-*   **📊 Interactive React Dashboard**: A beautiful Dark-Mode `Vite` + `React` interface featuring `Leaflet` geospatial mapping and `Recharts` data visualization.
-*   **⚡ FastAPI Microservice**: High-concurrency python backend serving `pydantic` validated JSON APIs.
-*   **📄 Comprehensive PDF Export**: A rich client-side engine (`html2canvas` + `jsPDF`) generates mathematically perfect structural PDF reports containing multi-level demographic tables, localized geography data, and cleanly rendered vectorized forecast charts.
-*   **🛡️ Resilient Data Engineering**: Strict 30-day Time-To-Live (TTL) SQLite caching, dual-validation constraints to prevent storing incomplete scrapes, and a 5-attempt exponential backoff mechanism to guarantee location placement logic on Postcodes.io dropouts.
+### Core v3 Innovations
+*   **🧠 Triple-Engine Meta-Ensemble**: Combines **XGBoost** (Interactions), **ExtraTrees** (Stability), and **PyTorch TabNet** (Attention-based Neural Net) for >90% prediction accuracy.
+*   **💷 Real ONS CPI Inflation**: Unlike static models, v3 uses official **ONS D7EW Restaurant CPI** data to reverse-inflate forecasts into real-world nominal £ values for 2025–2027.
+*   **🛡️ TabNet Safety Clamp**: Proactive protection against CUDA out-of-bounds crashes. Every input is forcefuly clipped to training boundaries before inference.
+*   **🌙 Cultural Intelligence**: Automatic detection of **Ramadan and Eid** calendar shifts (2025–2028) to account for religious spending cycles.
+*   **🏷️ Brand Recognition**: Automatic extraction of high-performing franchises (e.g., Pepe's, Rio's) with brand-specific revenue multipliers.
 
 ---
 
 ## 🛠️ Architecture
 
-The project follows a decoupled monolithic architecture separating ML logic, the API serving layer, and the client application.
+The v3 architecture is optimized for high-performance inference and data-science reproducibility.
 
 ```text
-location_analyzer_v2/
-├── frontend/                     # ⚛️ React + Vite Web Dashboard (Phase 5.2)
-│   ├── src/components/           # Recharts, Leaflet Map, Glassmorphism UI
-│   └── src/index.css             # Vanilla CSS Dark Theme System
+Location-Analyzer-Prediction/
+├── frontend/                     # ⚛️ React Dashboard (Vite + Recharts)
+├── models/v3/                    # 🏋️‍♂️ V3 Artifacts (XGB, ET, TabNet, Preprocessor, Bounds)
+├── scripts/                      # 🛠️ Utility Suite
+│   ├── run_v3_pipeline.py        # CLI Interactive Prediction Tool
+│   ├── test_v3_api.py            # Integration & Stability Test Suite
+│   └── cpi_stage_*.py            # ONS CPI Ingestion & Verification
 ├── src/location_analyzer/
-│   ├── api/                      # ⚡ FastAPI Service (Phase 5.1)
-│   ├── config.py                 # 🔧 Pydantic BaseSettings Environment Management
-│   ├── ml/                       # 🧠 Machine Learning Engine (Phase 4)
-│   ├── pipeline/                 # ⚙️ Orchestration & Feature Mapping (Phase 5)
-│   └── scrapers/                 # 🕸️ Playwright Extraction Agents (Phase 3)
-├── models/                       # 🏋️‍♂️ Serialized .pkl Models & Transformers
-└── notebooks/                    # 📓 Data Science EDA & Training
+│   ├── api/                      # ⚡ FastAPI Service Layer
+│   ├── ml/                       # 🧠 V3 Inference Engine (predict_v3.py)
+│   ├── pipeline/                 # ⚙️ Scraping Orchestration
+│   └── scrapers/                 # 🕸️ Residential Extraction Agents
+└── data/processed/               # 📂 Master Combined Dataset & CPI DB
 ```
 
 ---
 
 ## 🏁 Quick Start
 
-To launch the full-stack application locally, you must run both the Python Backend and the Node.js Frontend simultaneously.
-
-### 1️⃣ Start the FastAPI Backend
-Ensure your `conda` environment is activated and dependencies are installed.
-
+### 1. Environment Setup
+The v3 pipeline requires the `location_analyzer_v3` environment for PyTorch/CUDA support.
 ```bash
-cd location_analyzer_v2
-python -m uvicorn src.location_analyzer.api.main:app --reload
+conda activate location_analyzer_v3
 ```
-The API will initialize, load the heavy Median Ensemble `.pkl` artifacts into memory, and begin listening on `http://127.0.0.1:8000`.
 
-### 2️⃣ Start the React Frontend
-Open a **second terminal window**.
-
+### 2. Start the FastAPI Backend
 ```bash
-cd location_analyzer_v2/frontend
-npm install
+# From root
+python -m uvicorn src.location_analyzer.api.main:app --host 127.0.0.1 --port 8000
+```
+*V3 Diagnostic Injection will log model shapes and TabNet dimensions to the console on every request.*
+
+### 3. Start the React Frontend
+```bash
+cd frontend
 npm run dev
 ```
 
-Visit the local URL (usually `http://localhost:5173`) in your browser to interact with the Dashboard.
-
-### 🐳 3️⃣ Deploy with Docker Compose (Production Ready)
-Instead of manually installing dependencies, you can launch the entire ecosystem (ML Engine + React App + SQLite) in one command:
+### 4. CLI Multi-Month Forecast
+Run a full prediction suite directly from your terminal:
 ```bash
-# From the root of the repository
-docker-compose up --build
+python scripts/run_v3_pipeline.py
 ```
-The React App builds using a multi-stage Nginx container (serving on Port `5173`), and the Python API boots a headless Chromium instance for scraping before serving on Port `8000`.
 
 ---
 
-## 🎨 Dashboard UX & Features
+## 📈 The V3 Inference Pipeline
 
-Location Analyzer v2 comes packed with features designed for high-density geographic analysis:
-- **Interactive Multi-Granular Forecasting**: Instantly toggle between Daily, Weekly, and Monthly prediction horizons utilizing high-performance SVG Recharts.
-- **Smart Result Panel Overlays**: Users can seamlessly minimize the heavy data-grid overlay to interact exclusively with the Leaflet map and spatial pinpoints, maintaining core KPIs on screen.
-- **On-Demand Cache Busters**: Bypassing the 30-day SQL limit, the frontend exposes a "Force Live Scrape" API flag to bypass internal checks and command the headless browsers to re-evaluate the target market area.
-- **A4 PDF Report Generation**: By rendering an invisible structural layout component loaded with localized district/ward markers, restaurant proximities, and transport scores, the application exports high-fidelity presentation-ready analytics dashboards entirely inside the client’s browser.
-
----
-
-## 📈 The ML Feature Engineering Pipeline
-
-The inference engine strictly mirrors the training preprocessing rules to prevent data-leakage and shape mismatches:
-1.  **Imputation & Capping**: Population outliers bounded.
-2.  **Log1p Transforms**: Applied to magnitudes (`population`, `Distance_to_Nearest_Station`).
-3.  **KBins Discretizer**: KMeans binning for employment statistics.
-4.  **PowerTransformer**: Yeo-Johnson transforms for `C1/C2` social classifications.
-5.  **Time Series Synthesis**: A 12-month sequential permutation is generated dynamically and fed into the Median Ensemble for seasonal trend modeling across 4 separate sub-models.
+The `predict_v3.py` engine follows a strict 7-step execution flow:
+1.  **Scraping**: Fetches live Nomis/StreetCheck and CrystalRoof data.
+2.  **Geocoding**: Resolves coordinates via Postcodes.io.
+3.  **Feature Assembly**: Injects Inferred_Brand, Days_Since_Open, and 5 temporal flags.
+4.  **Transformation**: Unified `ColumnTransformer` (TargetEnc, Quantile, Yeo-Johnson).
+5.  **Safety Clamp**: Features clipped to training min/max from `tabnet_bounds.json`.
+6.  **Ensemble Predict**: Blended result from XGB (42%), ET (33%), and TabNet (25%).
+7.  **CPI Inflation**: Forecast adjusted using official ONS monthly indices.
 
 ---
 
-## 🛡️ Anti-Bot & Rate Limiting Disclaimer
-The live `POST /predict` endpoint invokes the `InferencePipeline` which connects to external residential websites. To prevent IP bans, the scrapers in `src/scrapers/` must be configured with Rotating Proxies inside your `.env` file before executing high-volume bulk predictions.
+## 🧪 Verification & Stability
+
+The system includes a dedicated V3 stability suite to ensure CUDA and data integrity.
+
+*   **API Integration**: `python scripts/test_v3_api.py`
+*   **TabNet Stress Test**: `python tmp/test_tabnet_safety.py` (Tests 5M population OOD cases)
+*   **Smoke Test**: `python tmp/test_v3_smoke.py`
 
 ---
 
-## 🧪 Testing
+## 🛡️ Requirements
+- **OS**: Windows (optimized for RTX series GPUs)
+- **Runtime**: Python 3.11+ / Node.js 18+
+- **Hardware**: NVIDIA GPU (8GB+ VRAM recommended for TabNet)
+- **Data Source**: ONS CPI D7EW / Nomis / CrystalRoof
 
-The API and ML inference layers are fully covered by integration tests utilizing `pytest`.
+---
+*Developed for strategic retail intelligence.*
+red by integration tests utilizing `pytest`.
 
 ```bash
 # Run the FastAPI test suite covering scraper logic, serialization, and ML Output
