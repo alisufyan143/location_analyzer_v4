@@ -230,175 +230,379 @@ async def predict_sales(request_body: PredictRequest, request: Request):
 @router.post("/export-plot", response_class=HTMLResponse)
 async def export_bokeh_plot(request_body: PlotExportRequest):
     """
-    Generate an interactive Bokeh plot of the forecast and return it as a standalone HTML document.
+    Generate a comprehensive interactive Bokeh report (matching management template).
+    Includes: line chart, demographics tables, income/occupation cards,
+    restaurant/pub tables, transport section, and Google Maps embed.
     """
     try:
         from bokeh.plotting import figure
         from bokeh.embed import file_html
         from bokeh.resources import CDN
-        from bokeh.models import NumeralTickFormatter, HoverTool, ColumnDataSource, LabelSet, Div
-        from bokeh.layouts import column
-    except ImportError:
-        raise HTTPException(status_code=500, detail="Bokeh library is not installed.")
+        from bokeh.models import (
+            NumeralTickFormatter, HoverTool, ColumnDataSource,
+            Div, Legend, LegendItem, DatetimeTickFormatter,
+            DataRange1d, CustomJS, CheckboxGroup,
+            TableColumn as BokehTableColumn, StringFormatter,
+            HTMLTemplateFormatter
+        )
+        from bokeh.models.widgets import DataTable
+        from bokeh.layouts import column, row
+        import pandas as pd
+        import numpy as np
+    except ImportError as e:
+        raise HTTPException(status_code=500, detail=f"Missing library: {e}")
 
     postcode = request_body.postcode.upper()
-    dates = request_body.dates
+    dates_raw = request_body.dates
     sales = request_body.sales
     granularity = request_body.granularity.capitalize()
-
-    title = f"{granularity} Sales Forecast for {postcode}"
-
-    # Format values for labels
-    formatted_sales = [f"£{v:,.0f}" for v in sales]
-    source = ColumnDataSource(data=dict(x=dates, y=sales, text=formatted_sales))
-
-    # Make the plot wider for weekly/daily data
-    plot_width = max(1200, len(dates) * 40)
-
-    p = figure(
-        title=title,
-        x_range=dates,
-        height=500,
-        width=plot_width,
-        tools="pan,box_zoom,reset,save",
-        toolbar_location="right"
-    )
-
-    # Plot as vertical area/bar or line
-    p.vbar(x='x', top='y', width=0.9, color="#10b981", alpha=0.8, source=source)
-    p.line(x='x', y='y', color="#047857", line_width=2, source=source)
-    p.circle(x='x', y='y', color="#047857", size=6, source=source)
-
-    # Add data labels
-    labels = LabelSet(
-        x='x', y='y', text='text', source=source,
-        text_align='center', text_baseline='bottom',
-        text_font_size="9pt", text_color="#1f2937", y_offset=5
-    )
-    p.add_layout(labels)
-
-    p.yaxis.formatter = NumeralTickFormatter(format="£0,0")
-    p.xaxis.major_label_orientation = 1.0
-
-    hover = HoverTool()
-    hover.tooltips = [
-        ("Date", "@x"),
-        ("Predicted Sales", "£@y{0,0.00}")
-    ]
-    p.add_tools(hover)
-
-    p.xgrid.grid_line_color = None
-
-    # Build Demographics HTML display
     features = request_body.features
     dd = request_body.display_data
 
-    html_parts = []
-    
-    html_parts.append(f"<h2 style='font-family: sans-serif; color: #111827;'>Location Insights: {postcode}</h2>")
-    
-    # Core Demographics
-    html_parts.append("<div style='display: flex; gap: 2rem; font-family: sans-serif;'>")
-    
-    html_parts.append("<div style='flex: 1;'>")
-    html_parts.append("<h3 style='color: #374151; border-bottom: 2px solid #e5e7eb; padding-bottom: 4px;'>Core Demographics</h3>")
-    html_parts.append("<table style='width: 100%; border-collapse: collapse; font-size: 14px;'>")
-    def add_row(k, v):
-        html_parts.append(f"<tr style='border-bottom: 1px solid #f3f4f6;'><td style='padding: 8px 0; color: #6b7280; font-weight: 500;'>{k}</td><td style='padding: 8px 0; text-align: right; color: #111827;'>{v}</td></tr>")
-    
-    add_row("Population", f"{features.get('population', 0):,}")
-    add_row("Households", f"{features.get('households', 0):,}")
-    add_row("Non-White Population", f"{features.get('non-white', 0)}%")
-    add_row("Avg Household Income", f"£{features.get('avg_household_income', 0):,}")
-    add_row("Unemployment Rate", f"{features.get('unemployment_rate', 0)}%")
-    html_parts.append("</table></div>")
-    # Helper to parse list of dicts (like those in ethnicity/religion/occupations)
-    def render_list_of_dicts(title, data_list):
-        if not data_list or not isinstance(data_list, list):
-            return ""
-        html = f"<div style='flex: 1;'><h3 style='color: #374151; border-bottom: 2px solid #e5e7eb; padding-bottom: 4px;'>{title}</h3>"
-        html += "<table style='width: 100%; border-collapse: collapse; font-size: 14px;'>"
-        for item in data_list:
-            name = item.get('name', '')
-            pct = item.get('pct', '')
-            if pct != '':
-                pct = f"{pct}%"
-            html += f"<tr style='border-bottom: 1px solid #f3f4f6;'><td style='padding: 8px 0; color: #6b7280; font-weight: 500;'>{name}</td><td style='padding: 8px 0; text-align: right; color: #111827;'>{pct}</td></tr>"
-        html += "</table></div>"
-        return html
+    # ── Resolve geographic breadcrumb from features ────────────────────────────
+    town = features.get("Town", "") or dd.get("town", "") or postcode
+    breadcrumb = f"UK, England, {town}, {postcode}" if town and town != postcode else f"UK, {postcode}"
 
-    # Ethnicity, Religion, Age, Household are nested under display_data['ethnicity']['sections']
-    ethnicity_data = dd.get('ethnicity', {})
-    sections = ethnicity_data.get('sections', {})
-    
-    if 'Ethnicity' in sections:
-        html_parts.append(render_list_of_dicts("Ethnicity Breakdown", sections['Ethnicity']))
-    if 'Religion' in sections:
-        html_parts.append(render_list_of_dicts("Religion", sections['Religion']))
-        
-    html_parts.append("</div>") # End top flex container
+    # ── Parse dates into datetime objects for proper datetime axis ─────────────
+    parsed_dates = []
+    for d in dates_raw:
+        try:
+            parsed_dates.append(pd.to_datetime(d))
+        except Exception:
+            parsed_dates.append(None)
 
-    # Second row of demographics
-    html_parts.append("<div style='display: flex; gap: 2rem; font-family: sans-serif; margin-top: 2rem;'>")
-    if 'Age' in sections:
-        html_parts.append(render_list_of_dicts("Age Profile", sections['Age']))
-    if 'Household' in sections:
-        html_parts.append(render_list_of_dicts("Household Types", sections['Household']))
+    # Filter out unparseable dates
+    valid_pairs = [(d, s) for d, s in zip(parsed_dates, sales) if d is not None]
+    if valid_pairs:
+        dates_dt = [p[0] for p in valid_pairs]
+        sales_vals = [p[1] for p in valid_pairs]
+    else:
+        # Fallback: use string-based x_range
+        dates_dt = list(range(len(sales)))
+        sales_vals = sales
 
-    # Occupations from display_data['occupation']
-    if 'occupation' in dd and isinstance(dd['occupation'], dict):
-        html = f"<div style='flex: 1;'><h3 style='color: #374151; border-bottom: 2px solid #e5e7eb; padding-bottom: 4px;'>Occupations & Education</h3>"
-        html += "<table style='width: 100%; border-collapse: collapse; font-size: 14px;'>"
-        for k, v in dd['occupation'].items():
-            if k == 'students':
-                html += f"<tr style='border-bottom: 1px solid #f3f4f6;'><td style='padding: 8px 0; color: #6b7280; font-weight: 500;'>Full-time Students</td><td style='padding: 8px 0; text-align: right; color: #111827;'>{v}</td></tr>"
-            else:
-                formatted_k = k.replace('_', ' ').title()
-                html += f"<tr style='border-bottom: 1px solid #f3f4f6;'><td style='padding: 8px 0; color: #6b7280; font-weight: 500;'>{formatted_k}</td><td style='padding: 8px 0; text-align: right; color: #111827;'>{v}%</td></tr>"
-        html += "</table></div>"
-        html_parts.append(html)
+    # ── Average prediction line ───────────────────────────────────────────────
+    avg_pred = float(np.mean(sales_vals)) if sales_vals else 0
 
-    html_parts.append("</div>") # End middle flex container
-    
-    # Amenities / Transport
-    html_parts.append("<div style='display: flex; gap: 2rem; font-family: sans-serif; margin-top: 2rem;'>")
-    
-    # Transport Stations
-    if 'transport' in dd and 'stations' in dd['transport'] and isinstance(dd['transport']['stations'], list):
-        stations = dd['transport']['stations']
-        html = f"<div style='flex: 1;'><h3 style='color: #374151; border-bottom: 2px solid #e5e7eb; padding-bottom: 4px;'>Transport Stations</h3>"
-        for item in stations[:5]:
-            name = item.get('name', 'Unknown')
-            dist = item.get('distance', '')
-            stype = item.get('type', '')
-            html += f"<div style='margin-bottom: 8px;'><span style='background: #e0e7ff; padding: 4px 8px; border-radius: 4px; font-size: 13px; color: #3730a3; display: inline-block;'>{name} <b>{dist} mi</b> ({stype})</span></div>"
-        html += "</div>"
-        html_parts.append(html)
+    # ── Build the main ColumnDataSource ────────────────────────────────────────
+    source = ColumnDataSource(data=dict(
+        Date=dates_dt,
+        Prediction=sales_vals,
+        Postcode=[postcode] * len(sales_vals),
+        AveragePrediction=[avg_pred] * len(sales_vals),
+    ))
 
-    # Restaurants and Pubs
-    if 'amenities' in dd and isinstance(dd['amenities'], dict) and dd['amenities']:
-        html = f"<div style='flex: 1;'><h3 style='color: #374151; border-bottom: 2px solid #e5e7eb; padding-bottom: 4px;'>Nearby Amenities</h3>"
-        amenities_html = ""
-        for k, items in dd['amenities'].items():
-            if isinstance(items, list):
-                count = len(items)
-                title = f"{k.capitalize()} ({count})"
-                amenities_html += f"<div style='margin-bottom: 1rem;'><strong style='color: #374151; font-size: 14px;'>{title}</strong><br/>"
-                for item in items[:5]: # Show top 5
-                    name = item.get('name', 'Unknown')
-                    dist = item.get('distance', '')
-                    amenities_html += f"<span style='background: #f3f4f6; padding: 4px 8px; border-radius: 4px; font-size: 13px; color: #4b5563; margin-right: 8px; margin-bottom: 8px; margin-top: 4px; display: inline-block;'>{name} <b>{dist}</b></span>"
-                if count > 5:
-                    amenities_html += f"<span style='font-size: 13px; color: #6b7280;'>+{count - 5} more...</span>"
-                amenities_html += "</div>"
-        html += amenities_html + "</div>"
-        html_parts.append(html)
-        
-    html_parts.append("</div>") # End bottom flex container
+    # ══════════════════════════════════════════════════════════════════════════
+    #  1. HEADER DIV  (Geographic breadcrumb)
+    # ══════════════════════════════════════════════════════════════════════════
+    header_div = Div(text=f"<h1>{breadcrumb}</h1>", width=800)
 
-    info_div = Div(text="".join(html_parts), width=1000, margin=(20, 0, 40, 0))
+    # ══════════════════════════════════════════════════════════════════════════
+    #  2. CHECKBOX GROUP  (Postcode toggle – single series for now)
+    # ══════════════════════════════════════════════════════════════════════════
+    checkbox = CheckboxGroup(labels=[postcode], active=[0])
 
-    layout = column(p, info_div)
+    # ══════════════════════════════════════════════════════════════════════════
+    #  3. LINE CHART  (1500x800 with DatetimeAxis and HoverTool)
+    # ══════════════════════════════════════════════════════════════════════════
+    p = figure(
+        title="Predictions of Postcode with Demographics",
+        width=1500,
+        height=800,
+        x_axis_type="datetime",
+        x_axis_label="Date",
+        y_axis_label="Prediction",
+        tools="pan,wheel_zoom,box_zoom,save,reset,help",
+        toolbar_location="right",
+    )
 
-    html = file_html(layout, CDN, title)
-    return HTMLResponse(content=html)
+    line_renderer = p.line(
+        'Date', 'Prediction', source=source,
+        line_color="#1f77b4", line_width=2,
+    )
+
+    # Legend
+    legend = Legend(items=[LegendItem(label=postcode, renderers=[line_renderer])])
+    p.add_layout(legend)
+
+    # Hover tool with datetime formatting
+    hover = HoverTool(
+        renderers=[line_renderer],
+        tooltips=[
+            ("Date", "@Date{%F}"),
+            ("Prediction", "@Prediction{0.000}"),
+            ("Average Prediction", "@AveragePrediction{0.000}"),
+        ],
+        formatters={"@Date": "datetime"},
+        mode="vline",
+    )
+    p.add_tools(hover)
+
+    # JS callback for checkbox toggle
+    callback = CustomJS(
+        args=dict(lines=[line_renderer], checkbox=checkbox),
+        code="""
+        for (let i = 0; i < lines.length; i++) {
+            lines[i].visible = checkbox.active.includes(i);
+        }
+        """,
+    )
+    checkbox.js_on_change("active", callback)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  4. DEMOGRAPHICS DataTable
+    # ══════════════════════════════════════════════════════════════════════════
+    demo_keys = [
+        "postcode", "population", "households", "avg_household_income",
+        "unemployment_rate", "working", "unemployed", "ab", "c1/c2", "de",
+        "white", "non-white", "Town",
+    ]
+    demo_labels = []
+    demo_values = []
+    for k in demo_keys:
+        v = features.get(k, "")
+        if k == "postcode":
+            v = postcode
+        elif k == "Town" and not v:
+            v = town
+        demo_labels.append(k)
+        demo_values.append(str(v) if v != "" else "N/A")
+
+    demo_source = ColumnDataSource(data=dict(
+        Demographics=demo_labels,
+        Values=demo_values,
+    ))
+    demo_columns = [
+        BokehTableColumn(field="Demographics", title="Demographics", formatter=StringFormatter()),
+        BokehTableColumn(field="Values", title="Values", formatter=StringFormatter()),
+    ]
+    demo_heading = Div(text="<h3>Postcode area Demographics</h3>", width=800)
+    demo_table = DataTable(source=demo_source, columns=demo_columns, width=800, height=min(400, 30 * len(demo_labels) + 40))
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  5. ETHNICITY / RELIGION / AGE / HOUSEHOLD DataTable
+    # ══════════════════════════════════════════════════════════════════════════
+    ethnicity_data = dd.get("ethnicity", {})
+    eth_sections = ethnicity_data.get("sections", {})
+    eth_names = []
+    eth_pcts = []
+    for section_name in ["Ethnicity", "Religion", "Age", "Household"]:
+        items = eth_sections.get(section_name, [])
+        if isinstance(items, list):
+            for item in items:
+                name = item.get("name", "")
+                pct = item.get("pct", "")
+                if name:
+                    eth_names.append(str(name))
+                    eth_pcts.append(float(pct) if pct != "" else 0.0)
+
+    eth_source = ColumnDataSource(data=dict(Demographics=eth_names, Percentage=eth_pcts))
+
+    # Color-coded formatter (key demographics get highlighted)
+    eth_formatter = HTMLTemplateFormatter(template="""
+        <div style="background:<%= 
+            (function colorfromint(){
+                if(Demographics=='White British'){ return('#ec3219')}
+                if(Demographics=='Other White'){ return('#ec3219')}
+                if(Demographics=='Pakistani'){ return('#008000')}
+                if(Demographics=='Indian'){ return('#f77000')}
+                if(Demographics=='Aged 20 To 39'){ return('#FFD700')}
+                if(Demographics=='Aged 20 to 39'){ return('#FFD700')}
+            }()) %>;"> 
+        <%= value %>
+        </div>
+    """)
+    eth_columns = [
+        BokehTableColumn(field="Demographics", title="Demographics", formatter=eth_formatter),
+        BokehTableColumn(field="Percentage", title="Percentage", formatter=StringFormatter()),
+    ]
+    eth_heading = Div(text="<h3>Ethnicity, Religion, Age, Households</h3>", width=800)
+    eth_table = DataTable(source=eth_source, columns=eth_columns, width=800, height=min(500, 30 * len(eth_names) + 40))
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  6. RESTAURANTS DataTable
+    # ══════════════════════════════════════════════════════════════════════════
+    restaurants = dd.get("amenities", {}).get("restaurants", [])
+    rest_names = [r.get("name", "") for r in restaurants[:20]] if isinstance(restaurants, list) else []
+    rest_dists = [r.get("distance", "") for r in restaurants[:20]] if isinstance(restaurants, list) else []
+
+    rest_source = ColumnDataSource(data=dict(Restaurant=rest_names, Distance=rest_dists))
+    rest_columns = [
+        BokehTableColumn(field="Restaurant", title="Restaurant", formatter=StringFormatter()),
+        BokehTableColumn(field="Distance", title="Distance", formatter=StringFormatter()),
+    ]
+    rest_heading = Div(text="<h3>Restaurants Near Postcode</h3>", width=800)
+    rest_table = DataTable(source=rest_source, columns=rest_columns, width=800, height=min(500, 30 * len(rest_names) + 40))
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  7. PUBS DataTable
+    # ══════════════════════════════════════════════════════════════════════════
+    pubs = dd.get("amenities", {}).get("pubs", [])
+    pub_names = [r.get("name", "") for r in pubs[:20]] if isinstance(pubs, list) else []
+    pub_dists = [r.get("distance", "") for r in pubs[:20]] if isinstance(pubs, list) else []
+
+    pub_source = ColumnDataSource(data=dict(Pub=pub_names, Distance=pub_dists))
+    pub_columns = [
+        BokehTableColumn(field="Pub", title="Pub", formatter=StringFormatter()),
+        BokehTableColumn(field="Distance", title="Distance", formatter=StringFormatter()),
+    ]
+    pub_heading = Div(text="<h3>Bars, pubs, clubs</h3>", width=800)
+    pub_table = DataTable(source=pub_source, columns=pub_columns, width=800, height=min(600, 30 * len(pub_names) + 40))
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  8. INCOME SECTION (Styled card Div)
+    # ══════════════════════════════════════════════════════════════════════════
+    affluence = dd.get("affluence", {})
+    income_pa = affluence.get("income_pa", features.get("avg_household_income", 0))
+    affluence_rating = affluence.get("rating", "N/A")
+
+    income_div = Div(width=800, text=f"""
+        <h1>Income Section</h1>
+        <div style="border: 1px solid #ccc; border-radius: 8px; padding: 15px; background-color: orange; color: black;">
+            <p style="margin: 0; font-weight: bold;">Mean household income estimate before tax</p>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                <p style="margin: 0; font-size: 24px; font-weight: bold;">£{income_pa:,} p/a</p>
+                <span style="font-size: 24px; font-weight: bold;">{affluence_rating}</span>
+            </div>
+        </div>
+    """)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  9. OCCUPATION SECTION (Styled card + DataTable)
+    # ══════════════════════════════════════════════════════════════════════════
+    occupation = dd.get("occupation", {})
+    occ_labels_list = []
+    occ_pcts_list = []
+    if isinstance(occupation, dict):
+        label_map = {
+            "managerial and professional": "Managerial and professional",
+            "intermediate occupations": "Intermediate occupations",
+            "routine and manual": "Routine and manual",
+            "never worked": "Never worked, long-term unemployed",
+            "full-time students": "Full-time students",
+        }
+        for k, v in occupation.items():
+            occ_labels_list.append(label_map.get(k, k.replace("_", " ").title()))
+            occ_pcts_list.append(f"{v}%")
+
+    occ_div = Div(width=800, text="""
+        <h1>Occupation section</h1>
+        <div style="border: 1px solid #ccc; border-radius: 6px; padding: 15px; background-color: PaleVioletRed; color: black;">
+            <p style="margin: 0; font-weight: bold;">Occupation</p>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                <p style="margin: 0; font-size: 18px;">Occupation breakdown for this postcode area.</p>
+            </div>
+        </div>
+    """)
+
+    occ_source = ColumnDataSource(data=dict(Occupation=occ_labels_list, Percentage=occ_pcts_list))
+    occ_fmt = HTMLTemplateFormatter(template="""
+        <div style="background:<%= 
+            (function colorfromint(){
+                if(Occupation=='Full-time students'){ return('#FF7F50')}
+            }()) %>;"> 
+        <%= value %>
+        </div>
+    """)
+    occ_columns = [
+        BokehTableColumn(field="Occupation", title="Occupation", formatter=occ_fmt),
+        BokehTableColumn(field="Percentage", title="Percentage", formatter=StringFormatter()),
+    ]
+    occ_table = DataTable(source=occ_source, columns=occ_columns, width=800, height=min(200, 30 * len(occ_labels_list) + 40))
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  10. TRANSPORT SECTION (SVG icon heading + DataTable)
+    # ══════════════════════════════════════════════════════════════════════════
+    transport = dd.get("transport", {})
+    transport_score = transport.get("score", "N/A")
+    transport_zone = transport.get("zone", "N/A")
+    stations = transport.get("stations", [])
+
+    transport_svg_icon = (
+        '<svg width="20" height="20" viewBox="0 0 32 24">'
+        '<path d="M16 0A12 12 0 004.68 8h4.4a8 8 0 0113.8 0h4.4A12 12 0 0016 0z'
+        'M27.8 10h-4.08a7.86 7.86 0 01.26 2 8.23 8.23 0 01-.25 2h4.08a11.9 11.9 0 000-4z'
+        'M16 19.98a8 8 0 01-6.91-4h-4.4a12 12 0 0022.62 0h-4.4a8 8 0 01-6.9 4z'
+        'm-8-8a7.86 7.86 0 01.26-2H4.17a11.9 11.9 0 000 4h4.08a8.23 8.23 0 01-.25-2z"'
+        ' fill="#ED7C23"></path>'
+        '<path d="M29.98 10H2a2 2 0 00-2 2 2 2 0 002 2h27.98a2 2 0 002-2 2 2 0 00-2-2z"'
+        ' fill="#213e90"></path></svg>'
+    )
+
+    transport_heading = Div(width=800, text=f"""
+        <h1>{transport_svg_icon} Transport Section</h1>
+    """)
+
+    # Transport score table (single row)
+    transport_score_source = ColumnDataSource(data={
+        "connectivity to public transport": [f"{transport_score}/9" if transport_score != "N/A" else "N/A"],
+        "travel zone": [str(transport_zone)],
+    })
+    transport_score_cols = [
+        BokehTableColumn(field="connectivity to public transport", title="connectivity to public transport", formatter=StringFormatter()),
+        BokehTableColumn(field="travel zone", title="travel zone", formatter=StringFormatter()),
+    ]
+    transport_score_table = DataTable(source=transport_score_source, columns=transport_score_cols, width=800, height=50)
+
+    # Stations detailed table
+    station_names = [s.get("name", "") for s in stations[:10]] if isinstance(stations, list) else []
+    station_dists = [f"{s.get('distance', '')} mi" for s in stations[:10]] if isinstance(stations, list) else []
+    station_types = [s.get("type", "") for s in stations[:10]] if isinstance(stations, list) else []
+
+    station_source = ColumnDataSource(data=dict(
+        station_name=station_names,
+        distance=station_dists,
+        lines=station_types,
+    ))
+    station_columns = [
+        BokehTableColumn(field="station_name", title="station_name", formatter=StringFormatter()),
+        BokehTableColumn(field="distance", title="distance", formatter=StringFormatter()),
+        BokehTableColumn(field="lines", title="lines", formatter=StringFormatter()),
+    ]
+    station_table = DataTable(source=station_source, columns=station_columns, width=1000, height=min(300, 30 * len(station_names) + 40))
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  11. GOOGLE MAPS EMBED
+    # ══════════════════════════════════════════════════════════════════════════
+    maps_query = f"{town}+{postcode.replace(' ', '+')}+,+UK" if town else f"{postcode.replace(' ', '+')}+,+UK"
+    maps_heading = Div(text="<h2>Google Maps Section</h2>", width=300, height=100)
+    maps_div = Div(width=1000, height=800, text=f"""
+        <div class="mapouter"><div class="gmap_canvas">
+            <iframe width="1200" height="800" id="gmap_canvas"
+                src="https://maps.google.com/maps?q={maps_query}&t=&z=17&ie=UTF8&iwloc=&output=embed"
+                frameborder="0" scrolling="no" marginheight="0" marginwidth="0">
+            </iframe>
+        </div></div>
+    """)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  ASSEMBLE FINAL LAYOUT  (Column of all components)
+    # ══════════════════════════════════════════════════════════════════════════
+    spacer = Div(text="", width=800, height=10)
+
+    layout = column(
+        header_div,
+        checkbox,
+        p,
+        row(),                     # Spacer row
+        demo_heading,
+        demo_table,
+        eth_heading,
+        eth_table,
+        rest_heading,
+        rest_table,
+        pub_heading,
+        pub_table,
+        income_div,
+        occ_div,
+        occ_table,
+        transport_heading,
+        transport_score_table,
+        station_table,
+        maps_heading,
+        maps_div,
+    )
+
+    report_title = f"Predictions Plot — {postcode}"
+    html_output = file_html(layout, CDN, report_title)
+    return HTMLResponse(content=html_output)
