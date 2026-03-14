@@ -54,9 +54,7 @@ class ScotlandResolver:
             return {}
 
         # Lazy load caches
-        if self.census_cache is None: self.census_cache = self._cache_census()
-        if self.simd_cache is None: self.simd_cache = self._cache_simd()
-        if self.income_cache is None: self.income_cache = self._cache_income()
+        self._ensure_caches()
 
         features = {
             "postcode": postcode,
@@ -118,6 +116,100 @@ class ScotlandResolver:
 
         return features
 
+    def get_display_data(self, postcode: str, lat: Optional[float] = None, lng: Optional[float] = None) -> Dict[str, Any]:
+        """
+        Formats rich demographics and transport data for the dashboard UI.
+        Parity with CrystalRoofScraper output format.
+        """
+        pc_clean = postcode.replace(" ", "").upper()
+        dz22, dz11 = self._resolve_data_zones(pc_clean)
+        if not dz22 or not dz11: return {}
+
+        self._ensure_caches()
+        c = self.census_cache.get(dz22, {})
+        s_data = self.simd_cache.get(dz11, {})
+        i_data = self.income_cache.get(dz11, {})
+
+        pop = c.get("pop", 1)
+        
+        # ── 1. Ethnicity / Religion / Age ───────────────────────────────────
+        # Structure nested for Bokeh HTMLTemplateFormatter matches
+        display = {
+            "postcode": postcode,
+            "ethnicity": {
+                "sections": {
+                    "Ethnicity": [
+                        {"name": "White British", "pct": round((c.get("white_british",0)/pop)*100, 1)},
+                        {"name": "White Irish",   "pct": round((c.get("white_irish",0)/pop)*100, 1)},
+                        {"name": "White",         "pct": round((c.get("white",0)/pop)*100, 1)},
+                        {"name": "Indian",        "pct": round((c.get("indian",0)/pop)*100, 1)},
+                        {"name": "Pakistani",     "pct": round((c.get("pakistani",0)/pop)*100, 1)},
+                        {"name": "Bangladeshi",   "pct": round((c.get("bangladeshi",0)/pop)*100, 1)},
+                        {"name": "Chinese",       "pct": round((c.get("chinese",0)/pop)*100, 1)},
+                        {"name": "Mixed",         "pct": round((c.get("mixed",0)/pop)*100, 1)},
+                        {"name": "Arab",          "pct": round((c.get("arab",0)/pop)*100, 1)},
+                    ],
+                    "Religion": [
+                        {"name": "Christian",         "pct": round((c.get("rel_christian",0)/pop)*100, 1)},
+                        {"name": "Muslim",            "pct": round((c.get("muslim",0)/pop)*100, 1)},
+                        {"name": "Hindu",             "pct": round((c.get("rel_hindu",0)/pop)*100, 1)},
+                        {"name": "Sikh",              "pct": round((c.get("rel_sikh",0)/pop)*100, 1)},
+                        {"name": "Jewish",            "pct": round((c.get("rel_jewish",0)/pop)*100, 1)},
+                        {"name": "Buddhist",          "pct": round((c.get("rel_buddhist",0)/pop)*100, 1)},
+                        {"name": "No Religion",       "pct": round((c.get("rel_none",0)/pop)*100, 1)},
+                        {"name": "Religion Not Stated","pct": round((c.get("rel_ns",0)/pop)*100, 1)},
+                    ],
+                    "Age": [
+                        {"name": "Aged 20 To 39", "pct": round((c.get("age_20_39",0)/pop)*100, 1)},
+                        {"name": "Aged 40 To 59", "pct": round((c.get("age_40_59",0)/pop)*100, 1)},
+                        {"name": "Aged 60 To 79", "pct": round((c.get("age_60_79",0)/pop)*100, 1)},
+                        {"name": "Aged 80",       "pct": round((c.get("age_80_plus",0)/pop)*100, 1)},
+                    ],
+                    "Education (Highest Qualification)": [
+                         {"name": "Degree Level or Above",  "pct": round((c.get("edu_degree",0)/pop)*100, 1)},
+                         {"name": "Further/Higher Education","pct": round((c.get("edu_fe",0)/pop)*100, 1)},
+                         {"name": "Upper School",           "pct": round((c.get("edu_upper",0)/pop)*100, 1)},
+                         {"name": "Lower School",           "pct": round((c.get("edu_lower",0)/pop)*100, 1)},
+                         {"name": "No Qualifications",      "pct": round((c.get("edu_none",0)/pop)*100, 1)},
+                    ]
+                }
+            },
+            # ── 2. Affluence ────────────────────────────────────────────────
+            "affluence": {
+                "income_pa": int(float(i_data.get('Weekly_Median_Income', 0)) * 52),
+                "rating": f"{s_data.get('Income_rank', 'N/A')}/6976 (SIMD Rank)"
+            },
+            # ── 3. Occupation (NS-SeC Breakdown) ────────────────────────────
+            "occupation": {
+                "managerial and professional": round((c.get("ab",0)/max(c.get("t16",1),1))*100, 1),
+                "intermediate occupations": round((c.get("occ_inter",0)/max(c.get("t16",1),1))*100, 1),
+                "routine and manual": round((c.get("occ_routine",0)/max(c.get("t16",1),1))*100, 1),
+                "never worked": round((c.get("occ_never",0)/max(c.get("t16",1),1))*100, 1),
+                "full-time students": round((c.get("occ_student",0)/max(c.get("t16",1),1))*100, 1),
+            },
+            # ── 4. Transport ────────────────────────────────────────────────
+            "transport": {
+                "score": int((self._map_acc_score(s_data.get("PT_retail", 0)) + 
+                             self._map_acc_score(s_data.get("PT_GP", 0))) / 2),
+                "zone": "Scotland",
+                "stations": []
+            },
+            "amenities": {"restaurants": [], "pubs": []} # To be merged by Pipeline (Hybrid)
+        }
+
+        # Detailed station list
+        if lat and lng and self.stations:
+            nearby = []
+            for s in self.stations:
+                dist_mi = round(self._haversine(lat, lng, s["Lat"], s["Lng"]) * 0.621371, 2)
+                if dist_mi <= 1.5: # 1.5 mile radius for display
+                    nearby.append({"name": s["Type"], "distance": dist_mi, "type": s["Type"]})
+            
+            nearby = sorted(nearby, key=lambda x: x["distance"])[:10]
+            display["transport"]["stations"] = nearby
+
+        return display
+
     # --- Internal Helpers ---
 
     def _resolve_data_zones(self, pc_clean: str) -> tuple[Optional[str], Optional[str]]:
@@ -157,17 +249,22 @@ class ScotlandResolver:
                     stations.append({"Lat": float(r["Lat"]), "Lng": float(r["Lng"]), "Type": r["Type"]})
         return stations
 
+    def _ensure_caches(self):
+        if self.census_cache is None: self.census_cache = self._cache_census()
+        if self.simd_cache is None: self.simd_cache = self._cache_simd()
+        if self.income_cache is None: self.income_cache = self._cache_income()
+
     def _cache_census(self) -> Dict[str, Dict[str, Any]]:
         census = {}
-        # Parsing UV201 (Ethnicity), UV205 (Religion), UV607 (Social Grade)
-        # Assuming the standard filenames verified in previous steps.
+        # Parsing UV201 (Ethnicity), UV205 (Religion), UV607 (Social Grade), UV102b (Age), UV501 (Edu)
         files = {
             "eth": "Table UV201 - Ethnic group.csv",
             "rel": "Table UV205 - Religion.csv",
-            "sec": "Table UV607 - National Statistics Socio-economic Classification (NS-SeC).csv"
+            "sec": "Table UV607 - National Statistics Socio-economic Classification (NS-SeC).csv",
+            "age": "Table UV102b - Age (20) by sex.csv",
+            "edu": "Table UV501 - Highest level of qualification.csv",
         }
         
-        # Implementation matches the robust parsing logic we verified
         for key, fname in files.items():
             path = Path(self.config.census_dir) / fname
             if not path.exists(): continue
@@ -177,19 +274,75 @@ class ScotlandResolver:
                     if not r or len(r) < 3: continue
                     dz = r[0].strip()
                     if not dz.startswith("S01"): continue
-                    if dz not in census: census[dz] = {"ab":0, "c1c2":0, "de":0, "t16":0}
-                    cat, val = r[1], int(r[2].replace("-","0").replace(",",""))
                     
+                    if dz not in census: 
+                        census[dz] = {
+                            "ab":0, "c1c2":0, "de":0, "t16":0, 
+                            "white":0, "white_british":0, "white_irish":0,
+                            "indian":0, "pakistani":0, "bangladeshi":0, "chinese":0, "mixed":0, "arab":0,
+                            "rel_christian":0, "rel_buddhist":0, "rel_hindu":0, "rel_jewish":0, "muslim":0, "rel_sikh":0, "rel_none":0, "rel_ns":0,
+                            "age_20_39":0, "age_40_59":0, "age_60_79":0, "age_80_plus":0,
+                            "edu_degree":0, "edu_fe":0, "edu_upper":0, "edu_lower":0, "edu_none":0,
+                            "occ_inter":0, "occ_routine":0, "occ_never":0, "occ_student":0
+                        }
+                    
+                    cat, val_str = r[1].strip(), r[-1].replace("-","0").replace(",","")
+                    try: val = int(val_str)
+                    except: val = 0
+                    
+                    # ── Ethnicity ── (UV201)
                     if key == "eth":
                         if "All People" in cat: census[dz]["pop"] = val
-                        if "White: Total" in cat: census[dz]["white"] = val
+                        elif cat == "White: Total": census[dz]["white"] = val
+                        elif any(x in cat for x in ["White: Scottish", "White: Other British"]): census[dz]["white_british"] += val
+                        elif cat == "White: Irish": census[dz]["white_irish"] = val
+                        elif "Indian" in cat:      census[dz]["indian"] = val
+                        elif "Pakistani" in cat:   census[dz]["pakistani"] = val
+                        elif "Bangladeshi" in cat: census[dz]["bangladeshi"] = val
+                        elif "Chinese" in cat:     census[dz]["chinese"] = val
+                        elif "Mixed" in cat:       census[dz]["mixed"] = val
+                        elif "Arab" in cat:        census[dz]["arab"] = val
+                    
+                    # ── Religion ── (UV205)
                     elif key == "rel":
-                        if "Muslim" in cat: census[dz]["muslim"] = val
+                        if cat == "Christian": census[dz]["rel_christian"] = val
+                        elif cat == "Buddhist": census[dz]["rel_buddhist"] = val
+                        elif cat == "Hindu": census[dz]["rel_hindu"] = val
+                        elif cat == "Jewish": census[dz]["rel_jewish"] = val
+                        elif cat == "Muslim": census[dz]["muslim"] = val
+                        elif cat == "Sikh": census[dz]["rel_sikh"] = val
+                        elif cat == "No religion": census[dz]["rel_none"] = val
+                        elif cat == "Not answered": census[dz]["rel_ns"] = val
+                    
+                    # ── NS-SeC (Occupation/Social Grade) ── (UV607)
                     elif key == "sec":
+                        # L-categories map to AB/C1C2/DE and also dashboard groups
                         if "All people aged 16 and over" in cat: census[dz]["t16"] = val
                         elif any(x in cat for x in ["L1:", "L2:", "L3:"]): census[dz]["ab"] += val
-                        elif any(x in cat for x in ["L4:","L5:","L6:","L7:","L8:","L9:","L10:","L11:"]): census[dz]["c1c2"] += val
-                        elif any(x in cat for x in ["L12:","L13:","L14.1:","L14.2:"]): census[dz]["de"] += val
+                        elif any(x in cat for x in ["L4:","L5:","L6:"]):   census[dz]["ab"] += val # England mapping includes L4-L6 in AB
+                        elif "L7 Intermediate" in cat: census[dz]["occ_inter"] += val; census[dz]["c1c2"] += val
+                        elif any(x in cat for x in ["L8:","L9:","L10:","L11:"]): census[dz]["c1c2"] += val
+                        elif any(x in cat for x in ["L12:","L13:"]): census[dz]["occ_routine"] += val; census[dz]["de"] += val
+                        elif "L14" in cat: census[dz]["occ_never"] += val; census[dz]["de"] += val
+                        elif "L15" in cat: census[dz]["occ_student"] += val
+                    
+                    # ── Age ── (UV102b)
+                    elif key == "age":
+                        # We use "All people" gender filter implicitly by checking first row matches
+                        if r[2] != "All people": continue
+                        if any(x in cat for x in ["20 - 24", "25 - 29", "30 - 34", "35 - 39"]): census[dz]["age_20_39"] += val
+                        elif any(x in cat for x in ["40 - 44", "45 - 49", "50 - 54", "55 - 59"]): census[dz]["age_40_59"] += val
+                        elif any(x in cat for x in ["60 - 64", "65 - 69", "70 - 74", "75 - 79"]): census[dz]["age_60_79"] += val
+                        elif any(x in cat for x in ["80", "85", "90"]): census[dz]["age_80_plus"] += val
+
+                    # ── Education ── (UV501)
+                    elif key == "edu":
+                        if "Degree level" in cat: census[dz]["edu_degree"] = val
+                        elif "Further Education" in cat: census[dz]["edu_fe"] = val
+                        elif "Upper school" in cat: census[dz]["edu_upper"] = val
+                        elif "Lower school" in cat: census[dz]["edu_lower"] = val
+                        elif "No qualifications" in cat: census[dz]["edu_none"] = val
+
         return census
 
     def _cache_simd(self):

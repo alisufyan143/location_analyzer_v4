@@ -1,5 +1,6 @@
 import logging
 import requests
+import asyncio
 from typing import Dict, Any
 
 from location_analyzer.scrapers.streetcheck import DemographicsScraper
@@ -18,7 +19,7 @@ class InferencePipeline:
         # Scotland Support
         from location_analyzer.data.scotland_resolver import ScotlandResolver
         self.scotland_resolver = ScotlandResolver()
-        
+
     def _get_outercode(self, postcode: str) -> str:
         """Extracts the outercode from a standard UK format postcode."""
         return postcode.strip().split()[0].upper()
@@ -70,27 +71,13 @@ class InferencePipeline:
         """
         Flatten the nested CrystalRoof output into the flat column names 
         the ML model expects.
-        
-        CrystalRoof returns:
-            transport: {score, zone, stations: [{name, distance, type, lines}...]}
-            affluence: {income_pa, rating}
-            
-        Model expects:
-            Transport_Accessibility_Score  (int, 1-10)
-            Nearby_Station_Count           (int)
-            Distance_to_Nearest_Station    (float, miles)
-            Nearest_Station_Type           (str, e.g. "Underground", "National Rail")
         """
         flat = {}
 
         # ── Transport ──────────────────────────────────────────
         transport = cr_data.get("transport", {})
         if isinstance(transport, dict):
-            # Transport Score → Transport_Accessibility_Score
             score = transport.get("score")
-            # CrystalRoof transport score can be legitimately missing for some postcodes.
-            # Treat 0/None as missing (do NOT emit 0, because the ML OrdinalEncoder
-            # was not trained with category 0 and will crash on it).
             if score is not None:
                 try:
                     score_int = int(score)
@@ -99,12 +86,9 @@ class InferencePipeline:
                 except (ValueError, TypeError):
                     pass
 
-            # Stations list → station count, nearest distance, nearest type
             stations = transport.get("stations", [])
             if isinstance(stations, list) and stations:
                 flat["Nearby_Station_Count"] = len(stations)
-
-                # First station is the nearest (CrystalRoof lists by distance)
                 nearest = stations[0]
                 if isinstance(nearest, dict):
                     dist = nearest.get("distance")
@@ -139,26 +123,32 @@ class InferencePipeline:
         if self.scotland_resolver.is_scottish(postcode):
             logger.info("  [PHASE 0] Scotland Detected. Routing to local resolver...")
             
-            # Geocode first to get lat/lng for transport calculations
+            # 1. Geocode first to get lat/lng for transport/amenities calculations
             geo = self._geocode_postcode(postcode)
+            lat, lng = geo.get("lat"), geo.get("lng")
             
-            # Resolve features using local Census/SIMD/Transport
-            scot_features = self.scotland_resolver.get_features(
-                postcode, 
-                lat=geo.get("lat"), 
-                lng=geo.get("lng")
-            )
+            # 2. Resolve ML features using local Census/SIMD/Transport
+            scot_features = self.scotland_resolver.get_features(postcode, lat=lat, lng=lng)
             
             if scot_features:
                 scot_features.update(geo)
                 scot_features["postcode"] = postcode
                 scot_features["outercode"] = outercode
-                # Map social grades if needed (resolver already uses ab, c1/c2, de)
                 logger.info("  [PHASE 0] Scotland resolution complete.")
                 
-                # Attach display data (empty for now as we don't have rich lists for bars/pubs yet)
-                scot_features["_display"] = {} 
+                # 3. Hybrid Strategy: Rich Display Data (Local Demographics + Scraped Amenities)
+                display_data = self.scotland_resolver.get_display_data(postcode, lat=lat, lng=lng)
                 
+                logger.info("  [PHASE 0.2] Fetching hybrid amenities (Restaurants/Pubs) from CrystalRoof...")
+                try:
+                    cr_data = self.cr_scraper.scrape(postcode)
+                    if cr_data and "amenities" in cr_data:
+                        display_data["amenities"] = cr_data["amenities"]
+                        logger.info("  [PHASE 0.2] Hybrid amenities merged.")
+                except Exception as e:
+                    logger.warning("  [PHASE 0.2] CrystalRoof hybrid scrape failed: %s", e)
+                
+                scot_features["_display"] = display_data
                 return scot_features
             else:
                 logger.warning("  [PHASE 0] Scotland resolver returned empty results. Falling back to scrapers.")
@@ -190,7 +180,7 @@ class InferencePipeline:
         cr_flat = self._flatten_crystalroof(cr_data)
         combined.update(cr_flat)
         
-        # 4. Rename scraper keys → XGBoost expected feature names
+        # Rename scraper keys → XGBoost expected feature names
         if 'c1_c2' in combined:
             combined['c1/c2'] = combined.pop('c1_c2')
         if 'non_white' in combined:
