@@ -78,7 +78,7 @@ export default function PredictionForm({ onPredict, isLoading }) {
                     How it works
                 </h3>
                 <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                    Simply enter a valid UK postcode. The system will automatically scrape live demographic, affluence, and transport data for this area and feed it into the unified Median Ensemble ML model (combining XGBoost, LightGBM, CatBoost, and Random Forest) to predict fast food retail sales.
+                    Simply enter a valid UK postcode. The system will automatically scrape live demographic, affluence, and transport data for the area and feed it into our SciPy-optimized 7-Model Meta-Ensemble (combining XGBoost, LightGBM, CatBoost, Random Forest, ExtraTrees, ElasticNet, and PyTorch TabNet) to forecast daily fast-food retail sales.
                 </p>
             </div>
         </form>
