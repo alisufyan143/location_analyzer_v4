@@ -25,11 +25,15 @@ function App() {
     setResult(null)
 
     try {
-      const response = await axios.post('http://127.0.0.1:8000/predict', {
+      const apiBase = import.meta.env.VITE_API_BASE_URL || '';
+      const response = await axios.post(`${apiBase}/predict`, {
         postcode: postcode,
         branch_name: branchName,
         force_refresh: forceRefresh
-      }, { timeout: 300000 })  // 5 min – scraping pipeline takes 60-90s
+      }, { 
+        timeout: 300000,
+        headers: { 'ngrok-skip-browser-warning': 'true' }
+      })  // 5 min – scraping pipeline takes 60-90s
       setResult(response.data)
       setRequestComplete(true) // sync overlay: show 100% then hide
       setTimeout(() => {

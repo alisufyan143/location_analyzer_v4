@@ -173,7 +173,12 @@ export default function ResultsPanel({ result }) {
             el.style.top = '0';
             el.style.zIndex = '-100';
 
-            const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#0f172a' });
+            const canvas = await html2canvas(el, { 
+                scale: 2, 
+                backgroundColor: '#0f172a',
+                useCORS: true,
+                allowTaint: true
+            });
             el.style.top = originalTop;
 
             const imgData = canvas.toDataURL('image/png');
@@ -211,7 +216,7 @@ export default function ResultsPanel({ result }) {
                 display_data: result.display_data || {}
             };
 
-            const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/export-plot`, {
+            const response = await fetch('/export-plot', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
