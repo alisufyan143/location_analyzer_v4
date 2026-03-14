@@ -11,10 +11,12 @@
 
 ### Core v3 Innovations
 *   **🧠 Triple-Engine Meta-Ensemble**: Combines **XGBoost** (Interactions), **ExtraTrees** (Stability), and **PyTorch TabNet** (Attention-based Neural Net) for >90% prediction accuracy.
+*   **🏴󠁧󠁢󠁳󠁣󠁴󠁿 Scotland Localized Intelligence**: Full support for Scottish postcodes using **SIMD 2020v2**, **Census 2022**, and **SSPL 2026/1** for 100% accurate demographic resolution.
 *   **💷 Real ONS CPI Inflation**: Unlike static models, v3 uses official **ONS D7EW Restaurant CPI** data to reverse-inflate forecasts into real-world nominal £ values for 2025–2027.
-*   **🛡️ TabNet Safety Clamp**: Proactive protection against CUDA out-of-bounds crashes. Every input is forcefuly clipped to training boundaries before inference.
+*   **🛡️ TabNet Safety Clamp**: Proactive protection against CUDA out-of-bounds crashes. Every input is forcefully clipped to training boundaries before inference.
 *   **🌙 Cultural Intelligence**: Automatic detection of **Ramadan and Eid** calendar shifts (2025–2028) to account for religious spending cycles.
-*   **🏷️ Brand Recognition**: Automatic extraction of high-performing franchises (e.g., Pepe's, Rio's) with brand-specific revenue multipliers.
+*   **📍 Map Persistence**: Latitude and longitude are persisted in the database, ensuring consistent map displays across re-runs.
+*   **📱 Fully Responsive**: Optimized glassmorphic dashboard that works perfectly on Desktop, Tablet, and Mobile.
 
 ---
 
@@ -34,8 +36,10 @@ Location-Analyzer-Prediction/
 │   ├── api/                      # ⚡ FastAPI Service Layer
 │   ├── ml/                       # 🧠 V3 Inference Engine (predict_v3.py)
 │   ├── pipeline/                 # ⚙️ Scraping Orchestration
-│   └── scrapers/                 # 🕸️ Residential Extraction Agents
+│   ├── scrapers/                 # 🕸️ Residential Extraction Agents
+│   └── resolver/                 # 🏴󠁧󠁢󠁳󠁣󠁴󠁿 Localized Regional Engines (ScotlandResolver)
 └── data/processed/               # 📂 Master Combined Dataset & CPI DB
+    └── scotland_master_demographics.csv # 🏴󠁧󠁢󠁳󠁣󠁴󠁿 Enriched Scottish Master Data
 ```
 
 ---
@@ -58,7 +62,15 @@ python -m uvicorn src.location_analyzer.api.main:app --host 127.0.0.1 --port 800
 ### 3. Start the React Frontend
 ```bash
 cd frontend
-npm run dev
+npm run dev -- --host
+```
+
+### 4. Remote Tunneling (Optional)
+To share the dashboard with external users (e.g., via ngrok):
+```bash
+# Ensure the backend and frontend are running, then tunnel port 5173
+# The Vite proxy handles routing API requests to port 8000
+ngrok http 5173
 ```
 
 ### 4. CLI Multi-Month Forecast
@@ -99,10 +111,28 @@ The system includes a dedicated V3 stability suite to ensure CUDA and data integ
 - **Data Source**: ONS CPI D7EW / Nomis / CrystalRoof
 
 ---
-*Developed for strategic retail intelligence.*
-red by integration tests utilizing `pytest`.
 
-```bash
-# Run the FastAPI test suite covering scraper logic, serialization, and ML Output
-python -m pytest tests/test_api.py -v
-```
+## 🏴󠁧󠁢󠁳󠁣󠁴󠁿 Scottish Regional Engine
+The v3 pipeline includes a dedicated localized engine for Scotland that bypasses standard scrapers to use official high-fidelity datasets:
+- **SSPL 2026/1**: Precise postcode-to-datazone mapping.
+- **SIMD 2020v2**: Localized economic and transport indicators.
+- **Census 2022**: Official demographic resolution for Age, Ethnicity, and Religion.
+
+---
+
+## 📍 Persistence & UX
+- **Database**: SQLite with SQLAlchemy ORM.
+- **Schema**: Extended to persist `latitude` and `longitude` coordinates for every successful prediction.
+- **UX**: Automatic map centering on cached results for a seamless user experience.
+
+---
+
+## 🧪 Verification & Stability
+The system includes a dedicated V3 stability suite to ensure CUDA and data integrity.
+
+- **API Integration**: `python -m pytest tests/test_api.py -v`
+- **Database Integrity**: `python -m pytest tests/test_database.py -v`
+- **Map Persistence**: `python scripts/verify_map_persistence.py` (Cleaned up after verification)
+
+---
+*Developed for strategic retail intelligence.*
