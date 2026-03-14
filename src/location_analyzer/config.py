@@ -111,6 +111,20 @@ class MLSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ML_")
 
 
+class ScotlandSettings(BaseSettings):
+    """Configuration for Scottish data integration."""
+
+    enabled: bool = True
+    data_dir: str = "data/scottish_data"
+    sspl_path: str = "data/scottish_data/sspl-2026-1/SingleRecord.csv"
+    census_dir: str = "data/scottish_data/Datazone2022"
+    indicators_path: str = "data/scottish_data/simd_2020v2_indicators.csv"
+    income_path: str = "data/scottish_data/scotland_household_income_2018.csv"
+    stations_path: str = "data/scottish_data/scotland_stations.csv"
+
+    model_config = SettingsConfigDict(env_prefix="SCOTLAND_")
+
+
 class PathSettings(BaseSettings):
     """File path configuration."""
 
@@ -155,6 +169,7 @@ class Settings(BaseSettings):
     scraper: ScraperSettings = ScraperSettings()
     ml: MLSettings = MLSettings()
     paths: PathSettings = PathSettings()
+    scotland: ScotlandSettings = ScotlandSettings()
     ngrok: NgrokSettings = NgrokSettings()
     logging: LoggingSettings = LoggingSettings()
 

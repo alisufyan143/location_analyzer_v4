@@ -15,6 +15,10 @@ class InferencePipeline:
         self.demo_scraper = DemographicsScraper()
         self.cr_scraper = CrystalRoofScraper()
         
+        # Scotland Support
+        from location_analyzer.data.scotland_resolver import ScotlandResolver
+        self.scotland_resolver = ScotlandResolver()
+        
     def _get_outercode(self, postcode: str) -> str:
         """Extracts the outercode from a standard UK format postcode."""
         return postcode.strip().split()[0].upper()
@@ -130,6 +134,34 @@ class InferencePipeline:
             "└──────────────────────────────────────────────────────────┘",
             postcode,
         )
+
+        # ── PHASE 0: Scotland Detection ───────────────────────────────────────
+        if self.scotland_resolver.is_scottish(postcode):
+            logger.info("  [PHASE 0] Scotland Detected. Routing to local resolver...")
+            
+            # Geocode first to get lat/lng for transport calculations
+            geo = self._geocode_postcode(postcode)
+            
+            # Resolve features using local Census/SIMD/Transport
+            scot_features = self.scotland_resolver.get_features(
+                postcode, 
+                lat=geo.get("lat"), 
+                lng=geo.get("lng")
+            )
+            
+            if scot_features:
+                scot_features.update(geo)
+                scot_features["postcode"] = postcode
+                scot_features["outercode"] = outercode
+                # Map social grades if needed (resolver already uses ab, c1/c2, de)
+                logger.info("  [PHASE 0] Scotland resolution complete.")
+                
+                # Attach display data (empty for now as we don't have rich lists for bars/pubs yet)
+                scot_features["_display"] = {} 
+                
+                return scot_features
+            else:
+                logger.warning("  [PHASE 0] Scotland resolver returned empty results. Falling back to scrapers.")
 
         # ── PHASE 1: Demographics (Nomis API + Doogal) ────────────────────────
         logger.info("\n  [PHASE 1] Demographics Scraper (Nomis + Doogal)")
