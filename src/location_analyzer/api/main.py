@@ -61,6 +61,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+def read_root():
+    return {"message": "Location Analyzer API is LIVE", "docs": "/docs", "health": "/health"}
+
 app.include_router(router)
 
 @app.get("/health")
