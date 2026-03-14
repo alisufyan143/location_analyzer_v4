@@ -34,6 +34,8 @@ class Postcode(Base):
     prediction: Mapped[Optional[float]] = mapped_column(Float)
     min_prediction: Mapped[Optional[float]] = mapped_column(Float)
     max_prediction: Mapped[Optional[float]] = mapped_column(Float)
+    latitude: Mapped[Optional[float]] = mapped_column(Float)
+    longitude: Mapped[Optional[float]] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 

@@ -335,7 +335,7 @@ export default function ResultsPanel({ result }) {
     const pubs = amenities.pubs || []
 
     return (
-        <div className="glass-panel animate-slide-up" style={{
+        <div className="glass-panel animate-slide-up results-floating-panel" style={{
             position: 'absolute', bottom: 0, right: 0, left: 0,
             padding: isMinimized ? '0.75rem 2rem' : '1.5rem 2rem',
             display: 'flex', flexDirection: 'column',
@@ -378,7 +378,7 @@ export default function ResultsPanel({ result }) {
             {/* ── UPPER PANEL: Prediction Info & Large Graph ──────────────────────── */}
             {!isMinimized && (
                 <>
-                    <div style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '1.5rem', position: 'relative' }}>
+                    <div className="results-info-header" style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '1.5rem', position: 'relative' }}>
                         {/* Left: Prediction Number */}
                         <div style={{ minWidth: '220px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', color: 'var(--text-secondary)' }}>
@@ -408,7 +408,7 @@ export default function ResultsPanel({ result }) {
                         <div style={{ flex: 1, minWidth: 0, position: 'relative', display: 'flex', flexDirection: 'column' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                                 <span style={{ ...SECTION_TITLE, margin: 0, fontSize: '0.85rem' }}>12-Month Forecast Curve</span>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                <div className="results-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                                     {/* Granularity Toggle */}
                                     <div style={{
                                         display: 'flex', gap: '2px', background: 'rgba(255,255,255,0.05)',
@@ -479,9 +479,10 @@ export default function ResultsPanel({ result }) {
                                 </div>
                             </div>
 
-                            <div className="custom-scrollbar" style={{ overflowX: 'auto', paddingBottom: '0.5rem', flex: 1 }}>
+                            <div className="custom-scrollbar results-chart-container" style={{ overflowX: 'auto', paddingBottom: '0.5rem', flex: 1 }}>
                                 <div style={{
-                                    height: '100%', minHeight: '220px',
+                                    height: '350px', // Fixed height for Recharts stability
+                                    minHeight: '220px',
                                     minWidth: granularity === 'daily' ? '3000px' : granularity === 'weekly' ? '1200px' : '100%'
                                 }}>
                                     <ResponsiveContainer width="100%" height="100%">
@@ -532,14 +533,10 @@ export default function ResultsPanel({ result }) {
                     </div>
 
                     {/* ── LOWER PANEL: 4-Column Data Grid ───────────────────────────── */}
-                    <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'minmax(220px, 1fr) minmax(220px, 1.3fr) minmax(220px, 1fr) minmax(220px, 1.3fr)',
-                        gap: '1.5rem',
-                    }}>
+                    <div className="results-grid">
 
                         {/* Col 1: Postcode Demographics */}
-                        <div style={{ borderRight: '1px solid var(--border-color)', paddingRight: '1.5rem' }}>
+                        <div className="results-grid-col" style={{ borderRight: '1px solid var(--border-color)', paddingRight: '1.5rem' }}>
                             <CollapsiblePanel title="Postcode Demographics">
                                 <KVTable rows={DEMO_ROWS} />
                             </CollapsiblePanel>
@@ -563,7 +560,7 @@ export default function ResultsPanel({ result }) {
                         </div>
 
                         {/* Col 2: Ethnicity / Religion / Age / Household */}
-                        <div style={{ borderRight: '1px solid var(--border-color)', paddingRight: '1.5rem' }}>
+                        <div className="results-grid-col" style={{ borderRight: '1px solid var(--border-color)', paddingRight: '1.5rem' }}>
                             {hasNewFormat ? (
                                 Object.entries(ethSections).map(([sectionName, rows]) => (
                                     rows && rows.length > 0 && (
@@ -582,7 +579,7 @@ export default function ResultsPanel({ result }) {
                         </div>
 
                         {/* Col 3: Amenities + Occupation Part 1 */}
-                        <div style={{ borderRight: '1px solid var(--border-color)', paddingRight: '1.5rem' }}>
+                        <div className="results-grid-col" style={{ borderRight: '1px solid var(--border-color)', paddingRight: '1.5rem' }}>
                             {restaurants.length > 0 && (
                                 <CollapsiblePanel title={`Restaurants (${restaurants.length})`}>
                                     <PlaceTable items={restaurants} colName="Restaurant" />
@@ -596,7 +593,7 @@ export default function ResultsPanel({ result }) {
                         </div>
 
                         {/* Col 4: Occupation Part 2 */}
-                        <div>
+                        <div className="results-grid-col">
                             {occRows.length > 0 && (
                                 <CollapsiblePanel title="Occupation & Education" defaultOpen={true}>
                                     <BadgeTable rows={occRows} />

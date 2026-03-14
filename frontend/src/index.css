@@ -217,7 +217,24 @@ h1, h2, h3, h4, h5, h6 {
   display: grid;
   grid-template-columns: 380px 1fr;
   height: 100vh;
+  width: 100vw;
   overflow: hidden;
+}
+
+@media (max-width: 1024px) {
+  .app-container {
+    grid-template-columns: 320px 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-container {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    min-height: 100vh;
+    overflow-y: auto;
+  }
 }
 
 .sidebar {
@@ -232,11 +249,30 @@ h1, h2, h3, h4, h5, h6 {
   overflow-y: auto;
 }
 
+@media (max-width: 768px) {
+  .sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    padding: 1.5rem;
+    height: auto;
+    flex-shrink: 0;
+  }
+}
+
 .main-content {
   position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;
+  min-height: 400px;
+}
+
+@media (max-width: 768px) {
+  .main-content {
+    height: 600px; /* Give map a fixed minimum height on mobile */
+    flex: 1;
+  }
 }
 
 /* Leaflet Map overrides for Dark Mode */
@@ -266,4 +302,73 @@ h1, h2, h3, h4, h5, h6 {
 
 .leaflet-control-zoom a:hover {
   background-color: var(--accent-primary) !important;
+}
+
+/* Results Grid Responsiveness */
+.results-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.5rem;
+}
+
+@media (max-width: 1400px) {
+  .results-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .results-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .results-grid-col {
+    border-right: none !important;
+    padding-right: 0 !important;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 1.5rem;
+  }
+  
+  .results-grid-col:last-child {
+    border-bottom: none;
+  }
+}
+
+.results-grid-col {
+  border-right: 1px solid var(--border-color);
+  padding-right: 1.5rem;
+}
+
+.results-grid-col:last-child {
+  border-right: none;
+}
+
+/* Floating Panel Mobile Adjustments */
+@media (max-width: 768px) {
+  .results-floating-panel {
+    max-height: 80vh !important;
+    padding: 1rem !important;
+  }
+  
+  .results-info-header {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 1rem;
+  }
+  
+  .results-chart-container {
+    padding-top: 1rem;
+  }
+  
+  .results-actions {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem !important;
+  }
+  
+  .results-actions button {
+    flex: 1;
+    min-width: 120px;
+  }
 }

@@ -55,6 +55,8 @@ class PostcodeRepository:
         prediction: float | None = None,
         min_prediction: float | None = None,
         max_prediction: float | None = None,
+        latitude: float | None = None,
+        longitude: float | None = None,
     ) -> Postcode:
         """Insert or update a postcode record."""
         # Extract outercode (first part before space)
@@ -72,6 +74,10 @@ class PostcodeRepository:
                 existing.min_prediction = min_prediction
             if max_prediction is not None:
                 existing.max_prediction = max_prediction
+            if latitude is not None:
+                existing.latitude = latitude
+            if longitude is not None:
+                existing.longitude = longitude
             self.session.flush()
             return existing
 
@@ -83,6 +89,8 @@ class PostcodeRepository:
             prediction=prediction,
             min_prediction=min_prediction,
             max_prediction=max_prediction,
+            latitude=latitude,
+            longitude=longitude,
         )
         self.session.add(pc)
         self.session.flush()
@@ -342,6 +350,8 @@ class PostcodeRepository:
         out = {
             "postcode": pc.postcode,
             "outercode": pc.outercode or (pc.postcode.split()[0] if " " in pc.postcode else pc.postcode[:3]),
+            "lat": pc.latitude,
+            "lng": pc.longitude,
         }
         d = pc.demographics
         for k in self.DEMO_KEYS:
@@ -424,7 +434,10 @@ class PostcodeRepository:
         Persist a pipeline output dict (postcode + demographics + transport).
         Coerces types to match DB column types. Single transaction.
         """
-        self.upsert_postcode(postcode)
+        # Persist base postcode fields including coordinates
+        lat = features.get("lat")
+        lng = features.get("lng")
+        self.upsert_postcode(postcode, latitude=lat, longitude=lng)
         
         # 1. Demographics
         demo_kwargs = {}

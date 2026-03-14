@@ -53,7 +53,7 @@ function App() {
     <div className="app-container">
       {/* LEFT SIDEBAR: Forms and Controls */}
       <aside className="sidebar">
-        <div className="header" style={{ marginBottom: "1rem" }}>
+        <div className="header">
           <h1 className="gradient-text" style={{ fontSize: "1.75rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
             <MapPin size={28} color="var(--accent-primary)" />
             Location Analyzer

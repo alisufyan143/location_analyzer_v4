@@ -96,7 +96,7 @@ class TestPostcodeModel:
 
     def test_create_postcode(self, session):
         """Should create a postcode record."""
-        pc = Postcode(postcode="SW1A 1AA", outercode="SW1A", radius=1.6)
+        pc = Postcode(postcode="SW1A 1AA", outercode="SW1A", radius=1.6, latitude=51.5014, longitude=-0.1419)
         session.add(pc)
         session.flush()
 
@@ -104,6 +104,8 @@ class TestPostcodeModel:
         assert result is not None
         assert result.outercode == "SW1A"
         assert result.radius == 1.6
+        assert result.latitude == 51.5014
+        assert result.longitude == -0.1419
 
     def test_postcode_repr(self):
         """Repr should show postcode and prediction."""
@@ -237,13 +239,15 @@ class TestPostcodeRepository:
 
     def test_upsert_new_postcode(self, repo, session):
         """Should insert a new postcode."""
-        pc = repo.upsert_postcode("SW1A 1AA", radius=1.6, address="Buckingham Palace")
+        pc = repo.upsert_postcode("SW1A 1AA", radius=1.6, address="Buckingham Palace", latitude=51.5014, longitude=-0.1419)
         session.commit()
 
         result = repo.get_postcode("SW1A 1AA")
         assert result is not None
         assert result.radius == 1.6
         assert result.outercode == "SW1A"
+        assert result.latitude == 51.5014
+        assert result.longitude == -0.1419
 
     def test_upsert_existing_postcode(self, repo, session):
         """Should update an existing postcode without creating a duplicate."""
