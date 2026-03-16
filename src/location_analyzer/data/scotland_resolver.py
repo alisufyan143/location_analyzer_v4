@@ -24,6 +24,7 @@ class ScotlandResolver:
         self.stations = self._load_stations()
         self.census_cache = None # Lazy load
         self.simd_cache = None   # Lazy load
+        self.simd_ranks_cache = None # Lazy load
         self.income_cache = None # Lazy load
 
     def is_scottish(self, postcode: str) -> bool:
@@ -66,14 +67,17 @@ class ScotlandResolver:
         if dz11 in self.simd_cache:
             s = self.simd_cache[dz11]
             features["unemployment_rate"] = round(float(s.get('Employment_rate', 0)), 4)
-            features["unemployed"] = int(s.get("Employment_count", 0))
-            features["working"] = int(s.get("Working_age_population", 0))
+            # Convert raw counts to decimals (0.0-1.0) to match V3 model contract
+            working_age = max(int(s.get("Working_age_population", 0)), 1)
+            emp_count = int(s.get("Employment_count", 0))
+            features["unemployed"] = round(emp_count / working_age, 4)
+            features["working"] = round((working_age - emp_count) / working_age, 4)
             features["population"] = int(s.get("Total_population", 0))
             
-            # Accessibility Score Mapping
+            # Accessibility Score Mapping (cast to int for V3 OrdinalEncoder)
             score = (self._map_acc_score(s.get("PT_retail", 0)) + 
                      self._map_acc_score(s.get("PT_GP", 0))) / 2
-            features["Transport_Accessibility_Score"] = score
+            features["Transport_Accessibility_Score"] = int(round(score))
             
         if dz11 in self.income_cache:
             i = self.income_cache[dz11]
@@ -93,10 +97,14 @@ class ScotlandResolver:
             
             features["percent_muslim"] = round(c.get('muslim', 0) / pop, 4) if pop > 0 else 0
             
-            t16 = c.get("t16", 1)
-            features["ab"] = round(c.get("ab", 0) / t16, 4)
-            features["c1/c2"] = round(c.get("c1c2", 0) / t16, 4)
-            features["de"] = round(c.get("de", 0) / t16, 4)
+            # Normalize AB/C1C2/DE to sum to ~1.0 (use their own total, not t16)
+            ab_raw = c.get("ab", 0)
+            c1c2_raw = c.get("c1c2", 0)
+            de_raw = c.get("de", 0)
+            nssec_total = max(ab_raw + c1c2_raw + de_raw, 1)
+            features["ab"] = round(ab_raw / nssec_total, 4)
+            features["c1/c2"] = round(c1c2_raw / nssec_total, 4)
+            features["de"] = round(de_raw / nssec_total, 4)
 
         # 3. Transport (Distance in Miles)
         if lat and lng and self.stations:
@@ -177,7 +185,7 @@ class ScotlandResolver:
             # ── 2. Affluence ────────────────────────────────────────────────
             "affluence": {
                 "income_pa": int(float(i_data.get('Weekly_Median_Income', 0)) * 52),
-                "rating": f"{s_data.get('Income_rank', 'N/A')}/6976 (SIMD Rank)"
+                "rating": self.simd_ranks_cache.get(dz11, {}).get('SIMD2020V2CountryDecile', 'N/A')
             },
             # ── 3. Occupation (NS-SeC Breakdown) ────────────────────────────
             "occupation": {
@@ -252,7 +260,16 @@ class ScotlandResolver:
     def _ensure_caches(self):
         if self.census_cache is None: self.census_cache = self._cache_census()
         if self.simd_cache is None: self.simd_cache = self._cache_simd()
+        if self.simd_ranks_cache is None: self.simd_ranks_cache = self._cache_simd_ranks()
         if self.income_cache is None: self.income_cache = self._cache_income()
+
+    def _cache_simd_ranks(self) -> Dict[str, Dict[str, Any]]:
+        cache = {}
+        if Path(self.config.ranks_path).exists():
+            with open(self.config.ranks_path, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for r in reader: cache[r["DataZone"]] = r
+        return cache
 
     def _cache_census(self) -> Dict[str, Dict[str, Any]]:
         census = {}
