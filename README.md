@@ -7,15 +7,16 @@
 
 ## 🚀 Overview
 
-**Location Analyzer v3** is a state-of-the-art predictive engine designed to determine the exact commercial viability of UK retail locations. It transforms raw postcodes into detailed 12-month revenue forecasts by orchestrating live demographic scraping, geocoding, and a heavily engineered machine learning pipeline.
+**Location Analyzer v3** is a state-of-the-art predictive engine designed to determine the exact commercial viability of UK retail locations. It transforms raw postcodes into detailed 12-month revenue forecasts by orchestrating a 100% offline, heavily engineered machine learning pipeline.
 
 ### Core v3 Innovations
+*   **⚡ 100% Offline Architecture (Zero Scraper)**: Decommissioned all legacy web scrapers. All demographics, amenities, and occupation data are now resolved instantly (<30ms) from a 2.4GB local UK Master DB.
 *   **🧠 Triple-Engine Meta-Ensemble**: Combines **XGBoost** (Interactions), **ExtraTrees** (Stability), and **PyTorch TabNet** (Attention-based Neural Net) for >90% prediction accuracy.
 *   **🏴󠁧󠁢󠁳󠁣󠁴󠁿 Scotland Localized Intelligence**: Full support for Scottish postcodes using **SIMD 2020v2**, **Census 2022**, and **SSPL 2026/1** for 100% accurate demographic resolution.
 *   **💷 Real ONS CPI Inflation**: Unlike static models, v3 uses official **ONS D7EW Restaurant CPI** data to reverse-inflate forecasts into real-world nominal £ values for 2025–2027.
 *   **🛡️ TabNet Safety Clamp**: Proactive protection against CUDA out-of-bounds crashes. Every input is forcefully clipped to training boundaries before inference.
 *   **🌙 Cultural Intelligence**: Automatic detection of **Ramadan and Eid** calendar shifts (2025–2028) to account for religious spending cycles.
-*   **📍 Map Persistence**: Latitude and longitude are persisted in the database, ensuring consistent map displays across re-runs.
+*   **📍 Zero-Network Geocoding**: Latitude and longitude are resolved locally via an offline ONSPD-based index, ensuring 100% privacy and reliability.
 *   **📱 Fully Responsive**: Optimized glassmorphic dashboard that works perfectly on Desktop, Tablet, and Mobile.
 
 ---
@@ -35,11 +36,11 @@ Location-Analyzer-Prediction/
 ├── src/location_analyzer/
 │   ├── api/                      # ⚡ FastAPI Service Layer
 │   ├── ml/                       # 🧠 V3 Inference Engine (predict_v3.py)
-│   ├── pipeline/                 # ⚙️ Scraping Orchestration
-│   ├── scrapers/                 # 🕸️ Residential Extraction Agents
-│   └── resolver/                 # 🏴󠁧󠁢󠁳󠁣󠁴󠁿 Localized Regional Engines (ScotlandResolver)
-└── data/processed/               # 📂 Master Combined Dataset & CPI DB
-    └── scotland_master_demographics.csv # 🏴󠁧󠁢󠁳󠁣󠁴󠁿 Enriched Scottish Master Data
+│   ├── pipeline/                 # ⚙️ 100% Offline Orchestration (Zero Scraper)
+│   ├── data/                     # 🏴󠁧󠁢󠁳󠁣󠁴󠁿 Localized Regional Engines & Spatial Logic
+│   └── scrapers/                 # 🕸️ [DECOMMISSIONED] Legacy Scrapers
+└── data/uk_data/                 # 📂 Master Data Backbone (2.4GB SQLite + PBF)
+    └── uk_master.db              # 🇬🇧 Unified ONSPD + Census + OSM Amenities
 ```
 
 ---
@@ -84,8 +85,8 @@ python scripts/run_v3_pipeline.py
 ## 📈 The V3 Inference Pipeline
 
 The `predict_v3.py` engine follows a strict 7-step execution flow:
-1.  **Scraping**: Fetches live Nomis/StreetCheck and CrystalRoof data.
-2.  **Geocoding**: Resolves coordinates via Postcodes.io.
+1.  **Offline Resolution**: Resolves all features instantly from `uk_master.db` (ONS/NISRA/OSM).
+2.  **Zero-Network Geocoding**: Resolves coordinates via local ONSPD index.
 3.  **Feature Assembly**: Injects Inferred_Brand, Days_Since_Open, and 5 temporal flags.
 4.  **Transformation**: Unified `ColumnTransformer` (TargetEnc, Quantile, Yeo-Johnson).
 5.  **Safety Clamp**: Features clipped to training min/max from `tabnet_bounds.json`.
@@ -108,7 +109,7 @@ The system includes a dedicated V3 stability suite to ensure CUDA and data integ
 - **OS**: Windows (optimized for RTX series GPUs)
 - **Runtime**: Python 3.11+ / Node.js 18+
 - **Hardware**: NVIDIA GPU (8GB+ VRAM recommended for TabNet)
-- **Data Source**: ONS CPI D7EW / Nomis / CrystalRoof
+- **Data Backbone**: UK Master DB (ONSPD 2024, Census 2021, NISRA, SIMD v2, OSM)
 
 ---
 
