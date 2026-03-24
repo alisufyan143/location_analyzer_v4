@@ -116,12 +116,6 @@ class ScotlandSettings(BaseSettings):
 
     enabled: bool = True
     data_dir: str = "data/scottish_data"
-    sspl_path: str = "data/scottish_data/sspl-2026-1/SingleRecord.csv"
-    census_dir: str = "data/scottish_data/Datazone2022"
-    indicators_path: str = "data/scottish_data/simd_2020v2_indicators.csv"
-    ranks_path: str = "data/scottish_data/simd_2020v2.csv"
-    income_path: str = "data/scottish_data/scotland_household_income_2018.csv"
-    stations_path: str = "data/scottish_data/scotland_stations.csv"
 
     model_config = SettingsConfigDict(env_prefix="SCOTLAND_")
 

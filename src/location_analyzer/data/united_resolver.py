@@ -68,9 +68,9 @@ class UnitedResolver:
         return self._conn
 
     def _get_scotland_resolver(self):
-        """Lazy load Scotland resolver."""
+        """Lazy load Scotland resolver with shared connection."""
         if self._scotland_resolver is None:
-            self._scotland_resolver = ScotlandResolver()
+            self._scotland_resolver = ScotlandResolver(conn=self._get_conn())
         return self._scotland_resolver
 
     def get_features(self, postcode: str) -> Dict[str, Any]:
