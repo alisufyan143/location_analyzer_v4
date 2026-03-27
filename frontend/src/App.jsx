@@ -31,10 +31,10 @@ function App() {
         branch_name: branchName,
         force_refresh: forceRefresh,
         from_month: dateRange.from_month || null,
-        from_year:  dateRange.from_year  || null,
-        to_month:   dateRange.to_month   || null,
-        to_year:    dateRange.to_year    || null,
-      }, { 
+        from_year: dateRange.from_year || null,
+        to_month: dateRange.to_month || null,
+        to_year: dateRange.to_year || null,
+      }, {
         timeout: 300000,
         headers: { 'ngrok-skip-browser-warning': 'true' }
       })
