@@ -97,7 +97,7 @@ async def predict_sales(request_body: PredictRequest, request: Request):
     if request_body.branch_name:
         features["Branch Name"] = request_body.branch_name
 
-    # ── Phase R5: ML Inference (12-month time series) ─────────────────────────
+    # ── Phase R5: ML Inference (user-defined date range) ──────────────────────
     _log_phase("R5", "V3 ML Model Inference", f"features_count={len(features)}")
 
     import pandas as pd
@@ -105,83 +105,94 @@ async def predict_sales(request_body: PredictRequest, request: Request):
     import calendar
 
     now = datetime.now()
-    # Daily sequence: Today until end of Month 12
-    end_month_date = now + pd.DateOffset(months=12)
-    last_day_of_12th = datetime(end_month_date.year, end_month_date.month, 1) + pd.DateOffset(months=1) - timedelta(days=1)
-    
-    # 1. Generate all dates for the year
+
+    # ── Resolve date range from request or use sensible defaults ──────────────
+    from_month = request_body.from_month or now.month
+    from_year  = request_body.from_year  or now.year
+    # Default To: 12 months from current month
+    _default_end = now + pd.DateOffset(months=12)
+    to_month = request_body.to_month or _default_end.month
+    to_year  = request_body.to_year  or _default_end.year
+
+    # Build start (1st of from_month) and end (last day of to_month)
+    range_start = datetime(from_year, from_month, 1)
+    range_end   = datetime(to_year, to_month, 1) + pd.DateOffset(months=1) - timedelta(days=1)
+
+    # Validate: end must be after start
+    if range_end < range_start:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="'To' date must be after 'From' date.")
+
+    _log_phase("R5a", "Date Range Resolved",
+               f"from={from_year}-{from_month:02d} to={to_year}-{to_month:02d} "
+               f"({int((range_end - range_start).days)} days)")
+
+    # 1. Generate all daily dates across the range
     daily_dates = []
-    curr = now
-    while curr <= last_day_of_12th:
+    curr = range_start
+    while curr <= range_end:
         daily_dates.append(curr)
         curr += timedelta(days=1)
-        
-    # 2. Prepare features + dates for V3 service (one shared feature dict, many dates)
-    pred_features = [features.copy() for _ in daily_dates]
+
+    # 2. Prepare feature copies + date strings for V3 batch predict
+    pred_features    = [features.copy() for _ in daily_dates]
     pred_date_strings = [d.strftime("%Y-%m-%d") for d in daily_dates]
-        
-    # 3. Batch predict all ~365 days (V3: returns nominal CPI-inflated £)
+
+    # 3. Batch predict all days (V3: returns CPI-inflated nominal £)
     raw_preds = model_service.predict(pred_features, prediction_dates=pred_date_strings)
-    
-    # 4. Build daily sequence
+
+    # 4. Build daily time series
     daily_ts = []
     daily_pred_map = {}
     for d, p in zip(daily_dates, raw_preds):
         date_str = d.strftime("%Y-%m-%d")
-        daily_ts.append(TimeSeriesPrediction(
-            date=date_str, 
-            predicted_sales=round(p, 2)
-        ))
+        daily_ts.append(TimeSeriesPrediction(date=date_str, predicted_sales=round(p, 2)))
         daily_pred_map[date_str] = p
 
-    # 5. Build weekly sequence: Monday-based weeks starting from the week of 'now'
+    # 5. Build weekly sequence: Monday-based weeks within range
     weekly_ts = []
-    curr_week_start = now - timedelta(days=now.weekday())
-    while curr_week_start <= last_day_of_12th:
+    # Start from the Monday of the week that contains range_start
+    curr_week_start = range_start - timedelta(days=range_start.weekday())
+    while curr_week_start <= range_end:
         week_sum = 0
         for i in range(7):
-            day = curr_week_start + timedelta(days=i)
+            day     = curr_week_start + timedelta(days=i)
             day_str = day.strftime("%Y-%m-%d")
-            # If the day falls outside our prediction window (e.g. earlier days in the first week),
-            # we use the first predicted day's rate as a fallback.
-            rate = daily_pred_map.get(day_str, raw_preds[0])
+            # Use nearest available prediction if day falls outside range
+            rate = daily_pred_map.get(day_str, raw_preds[0] if raw_preds else 0)
             week_sum += rate
-        
-        # Label as 'Week of {Date}'
         weekly_ts.append(TimeSeriesPrediction(
             date=curr_week_start.strftime("%Y-%m-%d"),
             predicted_sales=round(week_sum, 2)
         ))
         curr_week_start += timedelta(days=7)
 
-    # 6. Build monthly sequence: Current month + 11
+    # 6. Build monthly sequence: one entry per calendar month in the range
     monthly_ts = []
-    for i in range(12):
-        target_date = now + pd.DateOffset(months=i)
-        y, m = target_date.year, target_date.month
-        
-        # Sum all daily predictions that fall within this year/month
+    month_cursor = datetime(from_year, from_month, 1)
+    end_of_range = datetime(to_year, to_month, 1)
+    while month_cursor <= end_of_range:
+        y, m = month_cursor.year, month_cursor.month
+        # Sum all daily predictions that fall in this year-month
         month_sum = sum(
-            p for d, p in zip(daily_dates, raw_preds) 
+            p for d, p in zip(daily_dates, raw_preds)
             if d.year == y and d.month == m
         )
-        
-        # If today is halfway through the current month, we won't have the full month's predictions.
-        # So we scale it up to a full month for an accurate forecast representation.
-        _, days_in_month = calendar.monthrange(y, m)
-        days_predicted = sum(1 for d in daily_dates if d.year == y and d.month == m)
+        _, days_in_month  = calendar.monthrange(y, m)
+        days_predicted    = sum(1 for d in daily_dates if d.year == y and d.month == m)
         if days_predicted > 0:
-            avg_daily_for_month = month_sum / days_predicted
-            month_total = avg_daily_for_month * days_in_month
+            # Scale to full calendar month for apples-to-apples comparison
+            month_total = (month_sum / days_predicted) * days_in_month
         else:
             month_total = 0
-            
         monthly_ts.append(TimeSeriesPrediction(
-            date=target_date.strftime("%b %Y"),
+            date=month_cursor.strftime("%b %Y"),
             predicted_sales=round(month_total, 2)
         ))
-    
+        month_cursor = (month_cursor + pd.DateOffset(months=1)).to_pydatetime()
+
     time_series = GranularTimeSeries(daily=daily_ts, weekly=weekly_ts, monthly=monthly_ts)
+
 
     logger.info(
         "  [PHASE R5] Inference complete -- 12 months predicted (Monthly/Weekly/Daily generated)\n"

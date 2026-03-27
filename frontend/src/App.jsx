@@ -13,7 +13,7 @@ function App() {
   const [error, setError] = useState(null)
   const [result, setResult] = useState(null)
 
-  const handlePredict = async (postcode, branchName = "", forceRefresh = false) => {
+  const handlePredict = async (postcode, branchName = "", forceRefresh = false, dateRange = {}) => {
     if (!postcode.trim()) {
       setError("Please enter a valid UK postcode.")
       return
@@ -29,13 +29,17 @@ function App() {
       const response = await axios.post(`${apiBase}/predict`, {
         postcode: postcode,
         branch_name: branchName,
-        force_refresh: forceRefresh
+        force_refresh: forceRefresh,
+        from_month: dateRange.from_month || null,
+        from_year:  dateRange.from_year  || null,
+        to_month:   dateRange.to_month   || null,
+        to_year:    dateRange.to_year    || null,
       }, { 
         timeout: 300000,
         headers: { 'ngrok-skip-browser-warning': 'true' }
-      })  // 5 min – scraping pipeline takes 60-90s
+      })
       setResult(response.data)
-      setRequestComplete(true) // sync overlay: show 100% then hide
+      setRequestComplete(true)
       setTimeout(() => {
         setLoading(false)
         setRequestComplete(false)
@@ -48,6 +52,7 @@ function App() {
       setLoading(false)
     }
   }
+
 
   return (
     <div className="app-container">

@@ -10,6 +10,10 @@ class PredictRequest(BaseModel):
     postcode: str = Field(..., description="The full UK postcode to analyze.")
     branch_name: Optional[str] = Field(None, description="Optional name of the branch.")
     force_refresh: bool = Field(False, description="If true, bypasses DB cache and forces a live scrape.")
+    from_month: Optional[int] = Field(None, ge=1, le=12, description="Start month (1-12). Defaults to current month.")
+    from_year: Optional[int] = Field(None, ge=2020, le=2028, description="Start year. Defaults to current year.")
+    to_month: Optional[int] = Field(None, ge=1, le=12, description="End month (1-12). Defaults to 12 months from now.")
+    to_year: Optional[int] = Field(None, ge=2020, le=2028, description="End year. Defaults to 12 months from now.")
 
 class GranularTimeSeries(BaseModel):
     """Daily, Weekly, and Monthly 12-month projections."""
