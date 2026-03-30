@@ -14,6 +14,8 @@ class PredictRequest(BaseModel):
     from_year: Optional[int] = Field(None, ge=2020, le=2028, description="Start year. Defaults to current year.")
     to_month: Optional[int] = Field(None, ge=1, le=12, description="End month (1-12). Defaults to 12 months from now.")
     to_year: Optional[int] = Field(None, ge=2020, le=2028, description="End year. Defaults to 12 months from now.")
+    inflate_sales: bool = Field(False, description="If true, adds weekly inflation adjustment to predictions.")
+    inflate_amount: Optional[float] = Field(None, ge=0, description="Weekly inflation amount in £. Used only when inflate_sales is true.")
 
 class GranularTimeSeries(BaseModel):
     """Daily, Weekly, and Monthly 12-month projections."""

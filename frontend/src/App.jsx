@@ -34,6 +34,8 @@ function App() {
         from_year: dateRange.from_year || null,
         to_month: dateRange.to_month || null,
         to_year: dateRange.to_year || null,
+        inflate_sales: dateRange.inflate_sales || false,
+        inflate_amount: dateRange.inflate_amount || null,
       }, {
         timeout: 300000,
         headers: { 'ngrok-skip-browser-warning': 'true' }

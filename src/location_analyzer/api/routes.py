@@ -141,6 +141,13 @@ async def predict_sales(request_body: PredictRequest, request: Request):
     # 3. Batch predict all days (V3: returns CPI-inflated nominal £)
     raw_preds = model_service.predict(pred_features, prediction_dates=pred_date_strings)
 
+    # 3.5 Apply weekly sales inflation if toggled on
+    if request_body.inflate_sales and request_body.inflate_amount:
+        WEEKLY_INFLATION = float(request_body.inflate_amount)
+        DAILY_INFLATION = WEEKLY_INFLATION / 7.0
+        raw_preds = [p + DAILY_INFLATION for p in raw_preds]
+        logger.info("  [PHASE R5] Sales inflation ACTIVE: +£%.2f/day (£%.0f/week)", DAILY_INFLATION, WEEKLY_INFLATION)
+
     # 4. Build daily time series
     daily_ts = []
     daily_pred_map = {}
