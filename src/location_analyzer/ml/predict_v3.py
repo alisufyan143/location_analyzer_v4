@@ -57,8 +57,8 @@ EID_AL_ADHA_DATES = {
 # ─── Brand Extraction (mirrors engineer_brand_maturity.py) ────────────────
 def extract_brand(branch_name: str) -> str:
     """Extract the inferred brand from a branch name string."""
-    if not branch_name or not isinstance(branch_name, str):
-        return "Independent"
+    if not branch_name:
+        return "Unknown"
     name = branch_name.lower()
     if "pepe" in name:
         return "Pepe's"
@@ -68,7 +68,13 @@ def extract_brand(branch_name: str) -> str:
         return "Maeme's"
     elif "galo" in name:
         return "Galos"
-    return "Independent"
+    elif "grill peri" in name:
+        return "Grill Peri Peri"
+    elif "grillo" in name:
+        return "Grillo"
+    elif "jojo" in name:
+        return "Jojo's"
+    return "Unknown"
 
 
 class V3PredictionService:
@@ -201,7 +207,11 @@ class V3PredictionService:
         row["outercode"] = raw_features.get("outercode", "")
 
         # ── Brand Extraction ──────────────────────────────────────────
-        row["Inferred_Brand"] = extract_brand(row["Branch Name"])
+        # Respect existing override if present, otherwise infer from branch name
+        if "Inferred_Brand" in raw_features and raw_features["Inferred_Brand"] != "Unknown":
+            row["Inferred_Brand"] = raw_features["Inferred_Brand"]
+        else:
+            row["Inferred_Brand"] = extract_brand(row.get("Branch Name", "Unknown"))
 
         # ── Days Since Open ───────────────────────────────────────────
         # Look up from demographics DB and project forward

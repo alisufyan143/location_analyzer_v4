@@ -147,10 +147,10 @@ async def predict_sales(request_body: PredictRequest, request: Request):
         daily_dates.append(curr)
         curr += timedelta(days=1)
 
-    # 2. Determine Brand ID and situational flags
-    brand_id = request_body.inferred_brand_override
-    if brand_id is None:
-        brand_id = BrandMatcher.get_brand_id(request_body.branch_name)
+    # 2. Determine Brand String and situational flags
+    inferred_brand = request_body.inferred_brand_override
+    if not inferred_brand:
+        inferred_brand = BrandMatcher.get_brand_id(request_body.branch_name)
     
     situational = {
         "is_logistics_strike": int(request_body.is_logistics_strike),
@@ -167,7 +167,7 @@ async def predict_sales(request_body: PredictRequest, request: Request):
         f_day.update(temporal_flags)
         
         # Inject Contextual Metadata
-        f_day["Inferred_Brand"] = brand_id
+        f_day["Inferred_Brand"] = inferred_brand
         f_day["Days_Since_Open"] = request_body.days_since_open
         
         pred_features.append(f_day)

@@ -10,38 +10,31 @@ class BrandMatcher:
     and -1/0 for Generic/Unknown.
     """
     
-    # Standard UK Brand Mapping (Production calibrated)
-    # Order: McDonalds, KFC, Burger King, Maemes, Pepes, Rios, Subway
+    # Standard Production Brand Mapping (V4 TargetEncoder Calibrated)
+    # Punctuation and spacing MUST match exactly.
     BRAND_MAP = {
-        "mcdonalds": 1,
-        "mcd": 1,
-        "kfc": 2,
-        "kentucky fried": 2,
-        "burger king": 3,
-        "bk": 3,
-        "maemes": 4,
-        "maeme": 4,
-        "pepes": 5,
-        "pepe's": 5,
-        "rios": 6,
-        "rio's": 6,
-        "subway": 7,
+        "pepe": "Pepe's",
+        "rio": "Rio's",
+        "maeme": "Maeme's",
+        "galo": "Galos",
+        "grill peri": "Grill Peri Peri",
+        "grillo": "Grillo",
+        "jojo": "Jojo's",
     }
 
     @staticmethod
-    def get_brand_id(branch_name: str) -> int:
+    def get_brand_id(branch_name: str) -> str:
         """
-        Extracts and maps the brand ID from a branch name.
-        Example: "Maeme's - London" -> 4
+        Extracts and maps the brand string from a branch name.
+        Example: "Maeme's Piri Piri - London" -> "Maeme's"
         """
         if not branch_name:
-            return -1 # Generic
+            return "Unknown"
 
         name_clean = branch_name.lower()
         
-        # Exact match or substring match for known brands
-        for brand, brand_id in BrandMatcher.BRAND_MAP.items():
-            if brand in name_clean:
-                return brand_id
+        for key, exact_brand in BrandMatcher.BRAND_MAP.items():
+            if key in name_clean:
+                return exact_brand
                 
-        return -1 # Generic / Unknown
+        return "Unknown"
