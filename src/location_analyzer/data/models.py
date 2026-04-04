@@ -36,6 +36,13 @@ class Postcode(Base):
     max_prediction: Mapped[Optional[float]] = mapped_column(Float)
     latitude: Mapped[Optional[float]] = mapped_column(Float)
     longitude: Mapped[Optional[float]] = mapped_column(Float)
+    
+    # [V4 Integration] POI Distances (miles)
+    dist_station: Mapped[Optional[float]] = mapped_column(Float)
+    dist_mcd_kfc: Mapped[Optional[float]] = mapped_column(Float)
+    dist_mosque: Mapped[Optional[float]] = mapped_column(Float)
+    dist_uni: Mapped[Optional[float]] = mapped_column(Float)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -82,6 +89,12 @@ class Demographics(Base):
     de: Mapped[Optional[float]] = mapped_column(Float)
     white: Mapped[Optional[float]] = mapped_column(Float)
     non_white: Mapped[Optional[float]] = mapped_column(Float)
+
+    # [V4 Integration] Region-specific metrics
+    rateable_value: Mapped[Optional[float]] = mapped_column(Float)
+    workplace_to_resident_ratio: Mapped[Optional[float]] = mapped_column(Float)
+    ethnic_diversity_index: Mapped[Optional[float]] = mapped_column(Float)
+    percent_muslim: Mapped[Optional[float]] = mapped_column(Float)
 
     # Relationship
     postcode_ref: Mapped["Postcode"] = relationship(back_populates="demographics")

@@ -105,6 +105,7 @@ class MLSettings(BaseSettings):
 
     models_dir: str = "models"
     v3_models_dir: str = "models/v3"
+    v4_models_dir: str = "models/v4"
     cpi_data_path: str = "models/v3/cpi_d7ew_restaurants.csv"
     default_metric: str = "rmse"
 

@@ -16,6 +16,12 @@ class PredictRequest(BaseModel):
     to_year: Optional[int] = Field(None, ge=2020, le=2028, description="End year. Defaults to 12 months from now.")
     inflate_sales: bool = Field(False, description="If true, adds weekly inflation adjustment to predictions.")
     inflate_amount: Optional[float] = Field(None, ge=0, description="Weekly inflation amount in £. Used only when inflate_sales is true.")
+    
+    # [V4 Integration] Situational & Contextual Overrides
+    is_logistics_strike: bool = Field(False, description="Simulate a logistics/supply chain strike.")
+    is_delivery_crackdown: bool = Field(False, description="Simulate a local delivery/parking crackdown.")
+    inferred_brand_override: Optional[int] = Field(None, description="Manually set the brand ID (1-7). If None, it is inferred from branch_name.")
+    days_since_open: Optional[int] = Field(1000, description="Days the location has been open. Defaults to 1000 (Mature site).")
 
 class GranularTimeSeries(BaseModel):
     """Daily, Weekly, and Monthly 12-month projections."""

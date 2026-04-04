@@ -7,6 +7,8 @@ from fastapi.responses import HTMLResponse
 from location_analyzer.api.schemas import PredictRequest, PredictResponse, TimeSeriesPrediction, GranularTimeSeries, PlotExportRequest
 from location_analyzer.pipeline.inference_pipeline import InferencePipeline
 from location_analyzer.data.repository import PostcodeRepository
+from location_analyzer.utils.calendar_utils import CalendarUtility
+from location_analyzer.utils.brand_matcher import BrandMatcher
 
 logger = logging.getLogger(__name__)
 
@@ -134,12 +136,33 @@ async def predict_sales(request_body: PredictRequest, request: Request):
         daily_dates.append(curr)
         curr += timedelta(days=1)
 
-    # 2. Prepare feature copies + date strings for V3 batch predict
-    pred_features    = [features.copy() for _ in daily_dates]
-    pred_date_strings = [d.strftime("%Y-%m-%d") for d in daily_dates]
+    # 2. Determine Brand ID and situational flags
+    brand_id = request_body.inferred_brand_override
+    if brand_id is None:
+        brand_id = BrandMatcher.get_brand_id(request_body.branch_name)
+    
+    situational = {
+        "is_logistics_strike": int(request_body.is_logistics_strike),
+        "is_delivery_crackdown": int(request_body.is_delivery_crackdown)
+    }
 
-    # 3. Batch predict all days (V3: returns CPI-inflated nominal £)
-    raw_preds = model_service.predict(pred_features, prediction_dates=pred_date_strings)
+    # 3. Prepare unique high-fidelity feature dicts for every single day (V4 Requirement)
+    pred_features = []
+    for d in daily_dates:
+        f_day = features.copy()
+        
+        # Inject Temporal Flags from CalendarUtility
+        temporal_flags = CalendarUtility.get_features_for_date(d, situational)
+        f_day.update(temporal_flags)
+        
+        # Inject Contextual Metadata
+        f_day["Inferred_Brand"] = brand_id
+        f_day["Days_Since_Open"] = request_body.days_since_open
+        
+        pred_features.append(f_day)
+
+    # 4. Batch predict all days using the V4 Ensemble
+    raw_preds = model_service.predict(pred_features)
 
     # 3.5 Apply weekly sales inflation if toggled on
     if request_body.inflate_sales and request_body.inflate_amount:
@@ -372,7 +395,8 @@ async def export_bokeh_plot(request_body: PlotExportRequest):
     # ══════════════════════════════════════════════════════════════════════════
     demo_keys = [
         "postcode", "population", "households", "avg_household_income",
-        "unemployment_rate", "working", "unemployed", "ab", "c1/c2", "de",
+        "unemployment_rate", "rateable_value", "workplace_to_resident_ratio", 
+        "ethnic_diversity_index", "working", "unemployed", "ab", "c1/c2", "de",
         "white", "non-white", "Town",
     ]
     demo_labels = []

@@ -57,27 +57,32 @@ class PostcodeRepository:
         max_prediction: float | None = None,
         latitude: float | None = None,
         longitude: float | None = None,
+        dist_station: float | None = None,
+        dist_mcd_kfc: float | None = None,
+        dist_mosque: float | None = None,
+        dist_uni: float | None = None,
     ) -> Postcode:
         """Insert or update a postcode record."""
-        # Extract outercode (first part before space)
-        outercode = postcode.strip().split()[0] if " " in postcode else postcode[:3]
+        # Robust Outercode Extraction (UK Standard: [Outercode][Incode])
+        # Incode is always exactly 3 characters.
+        pc_clean = postcode.replace(" ", "").upper()
+        outercode = pc_clean[:-3] if len(pc_clean) > 3 else pc_clean
 
         existing = self.session.get(Postcode, postcode)
         if existing:
-            if radius is not None:
-                existing.radius = radius
-            if address is not None:
-                existing.address = address
-            if prediction is not None:
-                existing.prediction = prediction
-            if min_prediction is not None:
-                existing.min_prediction = min_prediction
-            if max_prediction is not None:
-                existing.max_prediction = max_prediction
-            if latitude is not None:
-                existing.latitude = latitude
-            if longitude is not None:
-                existing.longitude = longitude
+            if radius is not None: existing.radius = radius
+            if address is not None: existing.address = address
+            if prediction is not None: existing.prediction = prediction
+            if min_prediction is not None: existing.min_prediction = min_prediction
+            if max_prediction is not None: existing.max_prediction = max_prediction
+            if latitude is not None: existing.latitude = latitude
+            if longitude is not None: existing.longitude = longitude
+            # [V4] POI Distances
+            if dist_station is not None: existing.dist_station = dist_station
+            if dist_mcd_kfc is not None: existing.dist_mcd_kfc = dist_mcd_kfc
+            if dist_mosque is not None: existing.dist_mosque = dist_mosque
+            if dist_uni is not None: existing.dist_uni = dist_uni
+            
             self.session.flush()
             return existing
 
@@ -91,6 +96,10 @@ class PostcodeRepository:
             max_prediction=max_prediction,
             latitude=latitude,
             longitude=longitude,
+            dist_station=dist_station,
+            dist_mcd_kfc=dist_mcd_kfc,
+            dist_mosque=dist_mosque,
+            dist_uni=dist_uni,
         )
         self.session.add(pc)
         self.session.flush()
@@ -315,6 +324,8 @@ class PostcodeRepository:
     DEMO_KEYS = (
         "population", "households", "avg_household_income", "unemployment_rate",
         "working", "unemployed", "ab", "c1_c2", "de", "white", "non_white",
+        "percent_muslim", "rateable_value", "workplace_to_resident_ratio",
+        "ethnic_diversity_index",
     )
     TRANSPORT_KEYS = (
         "Transport_Accessibility_Score", "Nearby_Station_Count",
@@ -352,12 +363,23 @@ class PostcodeRepository:
             "outercode": pc.outercode or (pc.postcode.split()[0] if " " in pc.postcode else pc.postcode[:3]),
             "lat": pc.latitude,
             "lng": pc.longitude,
+            # [V4] POI Distances stored on Postcode model
+            "distance_to_nearest_station_mi": pc.dist_station,
+            "Distance_to_Nearest_Station": pc.dist_station, # V4 Key Parity
+            "distance_to_mcdonalds_kfc_mi": pc.dist_mcd_kfc,
+            "distance_to_mosque_mi": pc.dist_mosque,
+            "distance_to_university_mi": pc.dist_uni,
+            "lat": pc.latitude,
+            "lon": pc.longitude,
         }
-        d = pc.demographics
-        for k in self.DEMO_KEYS:
-            v = getattr(d, k, None)
-            if v is not None:
-                out["c1/c2" if k == "c1_c2" else "non-white" if k == "non_white" else k] = v
+        
+        # Load demographic metrics
+        demo = pc.demographics
+        if demo:
+            for key in self.DEMO_KEYS:
+                v = getattr(demo, key, None)
+                if v is not None:
+                    out[key] = v
 
         ct = pc.crystal_transport
         if ct and ct.transport and isinstance(ct.transport, dict):
@@ -399,7 +421,8 @@ class PostcodeRepository:
                 return int(float(value))
             except (TypeError, ValueError):
                 return None
-        if key in ("avg_household_income", "unemployment_rate", "working", "unemployed", "ab", "c1_c2", "de", "white", "non_white"):
+        if key in ("avg_household_income", "unemployment_rate", "working", "unemployed", "ab", "c1_c2", "de", "white", "non_white", 
+                   "ethnic_diversity_index", "workplace_to_resident_ratio", "rateable_value", "percent_muslim"):
             try:
                 return float(value)
             except (TypeError, ValueError):
@@ -434,10 +457,19 @@ class PostcodeRepository:
         Persist a pipeline output dict (postcode + demographics + transport).
         Coerces types to match DB column types. Single transaction.
         """
-        # Persist base postcode fields including coordinates
+        # Persist base postcode fields including coordinates and V4 POI distances
         lat = features.get("lat")
         lng = features.get("lng")
-        self.upsert_postcode(postcode, latitude=lat, longitude=lng)
+        self.upsert_postcode(
+            postcode, 
+            latitude=lat, 
+            longitude=lng,
+            # POI distances
+            dist_station=features.get("distance_to_nearest_station_mi"),
+            dist_mcd_kfc=features.get("distance_to_mcdonalds_kfc_mi"),
+            dist_mosque=features.get("distance_to_mosque_mi"),
+            dist_uni=features.get("distance_to_university_mi")
+        )
         
         # 1. Demographics
         demo_kwargs = {}

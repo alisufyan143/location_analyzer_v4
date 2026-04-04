@@ -3,270 +3,254 @@ import os
 import pandas as pd
 import numpy as np
 import logging
-from typing import Dict, Any, List
+import json
+import sys
+import sklearn
+from typing import Dict, Any, List, Optional
+from sklearn.base import BaseEstimator, RegressorMixin
+from pytorch_tabnet.tab_model import TabNetRegressor
+
+# Ensure transformers return DataFrames to preserve feature names correctly
+sklearn.set_config(transform_output="pandas")
 
 logger = logging.getLogger(__name__)
 
-import sys
-from sklearn.base import BaseEstimator, RegressorMixin
-
-class MedianEnsembleRegressor(BaseEstimator, RegressorMixin):
+class V4EnsembleModel(BaseEstimator, RegressorMixin):
     """
-    A custom wrapper class holding XGBoost, LightGBM, CatBoost, and Random Forest.
-    Required here in __main__ module scope so joblib can deserialize the object exported from the notebook.
+    Production V4 Ensemble: Blends ExtraTrees, LightGBM, RandomForest, and TabNet
+    using weights defined in prod_ensemble_weights.json.
     """
-    def __init__(self, xgb_model, lgb_model, cb_model, rf_model, rf_preprocessor, cat_features):
-        self.xgb_model = xgb_model
-        self.lgb_model = lgb_model
-        self.cb_model = cb_model
-        self.rf_model = rf_model
-        self.rf_preprocessor = rf_preprocessor
-        self.cat_features = cat_features
-        
-    def predict(self, X):
-        import numpy as np
-        X_rf = self.rf_preprocessor.transform(X)
-        preds_rf = self.rf_model.predict(X_rf)
-        
-        X_xgb_lgb = X.copy()
-        for col in self.cat_features:
-            if col in X_xgb_lgb.columns:
-                X_xgb_lgb[col] = X_xgb_lgb[col].fillna('Unknown').astype(str).astype('category')
-                
-        preds_xgb = self.xgb_model.predict(X_xgb_lgb)
-        preds_lgb = self.lgb_model.predict(X_xgb_lgb)
-        
-        X_cb = X.copy()
-        for col in self.cat_features:
-            if col in X_cb.columns:
-                X_cb[col] = X_cb[col].fillna('Unknown').astype(str)
-                
-        preds_cb = self.cb_model.predict(X_cb)
-        
-        all_preds = np.vstack([preds_rf, preds_xgb, preds_lgb, preds_cb])
-        return np.median(all_preds, axis=0)
+    def __init__(self, model_dir: str):
+        self.model_dir = model_dir
+        self.models = {}
+        self.weights = {}
+        self._load_ensemble()
 
-# Critical fix for FastAPI/uvicorn: map this class into the __main__ execution 
-# namespace so joblib can unpickle the model that was exported from Jupyter.
-sys.modules['__main__'].MedianEnsembleRegressor = MedianEnsembleRegressor
+    def _load_ensemble(self):
+        """Loads all sub-models and their relative weights."""
+        try:
+            # 1. Load Weights
+            weight_path = os.path.join(self.model_dir, "prod_ensemble_weights.json")
+            if os.path.exists(weight_path):
+                with open(weight_path, 'r') as f:
+                    self.weights = json.load(f)
+                logger.info(f"Loaded ensemble weights: {self.weights}")
+            else:
+                # Default safety weights if JSON is missing
+                self.weights = {"lgb": 0.4, "rf": 0.2, "et": 0.2, "tabnet": 0.2}
+                logger.warning(f"Weights file {weight_path} not found. Using defaults.")
+
+            # 2. Load Scikit-Learn / LightGBM models
+            model_files = {
+                "lgb": "prod_lgb_model.joblib",
+                "rf": "prod_rf_model.joblib",
+                "et": "prod_et_model.joblib"
+            }
+            for key, filename in model_files.items():
+                path = os.path.join(self.model_dir, filename)
+                if os.path.exists(path):
+                    self.models[key] = joblib.load(path)
+                    logger.info(f"Loaded {key} model.")
+                else:
+                    logger.error(f"Missing essential model: {path}")
+
+            # 3. Load TabNet (Special Zip Loader)
+            tabnet_path = os.path.join(self.model_dir, "prod_tabnet_model.zip")
+            if os.path.exists(tabnet_path):
+                # TabNetRegressor.load_model expects the path without .zip or handles the zip
+                self.models["tabnet"] = TabNetRegressor()
+                self.models["tabnet"].load_model(tabnet_path)
+                logger.info("Loaded TabNet model.")
+            else:
+                logger.warning(f"TabNet model not found at {tabnet_path}. Ensemble will proceed without it.")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize V4 Ensemble: {e}")
+            raise RuntimeError(f"V4 Ensemble Initialization Error: {e}")
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Weighted average of sub-model predictions."""
+        preds = []
+        applied_weights = []
+
+        try:
+            X_numeric = X.astype(np.float32)
+        except Exception as e:
+            logger.error(f"Failed to cast features to float32: {e}")
+            raise
+
+        for key, model in self.models.items():
+            # Match keys like 'lgb_weight' from the JSON
+            weight_key = f"{key}_weight"
+            weight = self.weights.get(weight_key, 0.0)
+            
+            if weight <= 0:
+                continue
+
+            try:
+                if key == "tabnet":
+                    # TabNet strictly requires numpy arrays (not DataFrames)
+                    # Use values from the processed DataFrame
+                    X_array = X.values if hasattr(X, "values") else X
+                    # Casting to float32 is already done at the top of predict() if X was numeric
+                    # but if X is the DataFrame, we cast here.
+                    X_numeric_tabnet = X_array.astype(np.float32)
+                    p = model.predict(X_numeric_tabnet).flatten()
+                else:
+                    # LGBM, RF, and ET prefer DataFrames with the prefixed names
+                    p = model.predict(X)
+                
+                preds.append(p * weight)
+                applied_weights.append(weight)
+                
+            except Exception as e:
+                # TabNet often fails on CUDA indices if input distributions shift
+                # We log it but allow the ensemble to continue with other strong models (LGBM, RF, ET)
+                # to satisfy production reliability without crashing.
+                logger.error(f"Ensemble sub-model '{key}' prediction failed: {e}")
+                # Fallback prediction logic for tree models 
+                if key != "tabnet" and hasattr(model, 'booster_'):
+                    try:
+                        p = model.booster_.predict(X_numeric)
+                        preds.append(p * weight)
+                        applied_weights.append(weight)
+                    except:
+                        pass
+
+        if not preds:
+            raise ValueError("All sub-models failed to predict. Check input feature consistency and shape.")
+
+        total_weight = sum(applied_weights)
+        return sum(preds) / total_weight
+
+# Inject into __main__ for joblib compatibility if needed (though we load separately)
+sys.modules['__main__'].V4EnsembleModel = V4EnsembleModel
 
 class PredictionService:
     """
-    Loads the trained Median Ensemble (XGB, LGBM, CB, RF) and all associated 
-    Scikit-Learn feature engineering transformers to provide real-time sales predictions.
+    V4 Prediction Service: 
+    - Applies unified prod_preprocessor.joblib (RobustScaler + Yeo-Johnson + TargetEncoding).
+    - Runs the V4EnsembleModel.
+    - Handles raw £ sales conversion.
     """
-    
     def __init__(self, model_dir: str):
         self.model_dir = model_dir
-        self.model = None
-        self.qt = None
-        self.kbd = None
-        self.pt = None
-        self.rs = None
-        self.oe = None
+        self.preprocessor = None
+        self.ensemble = None
         self._load_artifacts()
 
     def _load_artifacts(self):
-        """Loads all .pkl artifacts from the models directory."""
+        """Load the preprocessor and the ensemble container."""
         try:
-            model_path = os.path.join(self.model_dir, "median_ensemble.pkl")
-            if not os.path.exists(model_path):
-                # Fallback to the original XGBoost if the ensemble one doesn't exist
-                model_path = os.path.join(self.model_dir, "xgboost_sales_model_v2.pkl")
-                
-            self.model = joblib.load(model_path)
-            logger.info(f"Successfully loaded Ensemble model from {model_path}")
+            prep_path = os.path.join(self.model_dir, "prod_preprocessor.joblib")
+            if os.path.exists(prep_path):
+                self.preprocessor = joblib.load(prep_path)
+                # Force pandas output for name preservation through nested pipelines
+                if hasattr(self.preprocessor, "set_output"):
+                    self.preprocessor.set_output(transform="pandas")
+                logger.info("Loaded V4 Preprocessor.")
+            else:
+                raise FileNotFoundError(f"Missing V4 Preprocessor at {prep_path}")
+
+            self.ensemble = V4EnsembleModel(self.model_dir)
             
-            # Load transformers safely (they will be None if they don't exist)
-            transformers = {
-                'qt': 'quantile_transformer.pkl',
-                'kbd': 'kbins_discretizer.pkl',
-                'pt': 'power_transformer.pkl',
-                'rs': 'robust_scaler.pkl',
-                'oe': 'ordinal_encoder.pkl'
-            }
-            
-            for attr_name, filename in transformers.items():
-                path = os.path.join(self.model_dir, filename)
-                if os.path.exists(path):
-                    setattr(self, attr_name, joblib.load(path))
-                    logger.debug(f"Loaded {filename}")
-                else:
-                    logger.warning(f"Transformer {filename} not found. Ensure it was exported from Notebook.")
-                    
         except Exception as e:
-            logger.error(f"Failed to load ML artifacts: {e}")
-            raise RuntimeError(f"Failed to initialize PredictionService: {e}")
+            logger.error(f"PredictionService Init Failed: {e}")
+            raise RuntimeError(f"PredictionService Init Failed: {e}")
 
-    def _apply_feature_engineering(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _align_features(self, df_raw: pd.DataFrame) -> pd.DataFrame:
         """
-        Replicates the exact Feature Engineering pipeline from Section 5 of the Jupyter Notebook.
+        Ensures the raw DataFrame has exactly the 30 columns required by the preprocessor,
+        with the correct names and case-sensitivity.
         """
-        df_clean = df.copy()
-        df_clean = df_clean.astype(float, errors='ignore')
-
-        # 1. Population Capping (OOD Fix)
-        if 'population' in df_clean.columns:
-            df_clean['population'] = df_clean['population'].clip(lower=30000)
-
-        # 2. Log1p Transformations
-        log_cols = ['population', 'households', 'Distance_to_Nearest_Station']
-        for col in log_cols:
-            if col in df_clean.columns:
-                # Convert to float to avoid dtype mapping issues
-                df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce')
-                df_clean[col] = np.log1p(df_clean[col])
-
-        # 3. Sqrt Transformations
-        if 'Nearby_Station_Count' in df_clean.columns:
-            df_clean['Nearby_Station_Count'] = pd.to_numeric(df_clean['Nearby_Station_Count'], errors='coerce')
-            df_clean['Nearby_Station_Count'] = np.sqrt(df_clean['Nearby_Station_Count'])
-
-        # 4. QuantileTransformer (non-white)
-        if 'non-white' in df_clean.columns and self.qt is not None:
-            mask = df_clean['non-white'].notna()
-            df_clean['non-white_quantile'] = np.nan
-            if mask.sum() > 0:
-                values = df_clean.loc[mask, ['non-white']]
-                df_clean.loc[mask, 'non-white_quantile'] = self.qt.transform(values)
-
-        # 5. KBinsDiscretizer (unemployed, ab, de)
-        kmeans_cols = ['unemployed', 'ab', 'de']
-        if self.kbd is not None:
-            # Note: kbd expects these 3 columns together in the same order as fitted
-            # We must pass the df chunk that has these columns
-            available_cols = [c for c in kmeans_cols if c in df_clean.columns]
-            if len(available_cols) > 0:
-                # Find rows where ALL required columns are not null for the transform
-                mask = df_clean[available_cols].notna().all(axis=1)
-                
-                # Initialize the new columns with NaN
-                for col in available_cols:
-                    df_clean[f'{col}_kmeans_bin'] = np.nan
-                    
-                if mask.sum() > 0:
-                    try:
-                        # kbd.transform expects the exact same columns it was fitted on.
-                        # We must pull out exactly the columns it trained on.
-                        transformed = self.kbd.transform(df_clean.loc[mask, available_cols])
-                        for idx, col in enumerate(available_cols):
-                            df_clean.loc[mask, f'{col}_kmeans_bin'] = transformed[:, idx]
-                    except Exception as e:
-                        logger.warning(f"Error applying KBinsDiscretizer: {e}")
-
-        # 6. Yeo-Johnson (working, c1/c2)
-        yeo_cols = ['working', 'c1/c2']
-        if self.pt is not None:
-            # PowerTransformer was fitted on BOTH columns together.
-            # If either is missing, skip (otherwise sklearn throws "feature names missing").
-            if all(c in df_clean.columns for c in yeo_cols):
-                mask = df_clean[yeo_cols].notna().all(axis=1)
-                if mask.sum() > 0:
-                    try:
-                        transformed = self.pt.transform(df_clean.loc[mask, yeo_cols])
-                        for idx, col in enumerate(yeo_cols):
-                            df_clean.loc[mask, col] = transformed[:, idx]
-                    except Exception as e:
-                        logger.warning(f"Error applying PowerTransformer: {e}")
-
-        # 7. RobustScaler (avg_household_income)
-        if 'avg_household_income' in df_clean.columns and self.rs is not None:
-            mask = df_clean['avg_household_income'].notna()
-            if mask.sum() > 0:
-                df_clean.loc[mask, 'avg_household_income'] = self.rs.transform(df_clean.loc[mask, ['avg_household_income']])
-
-        # 8. Suspicious Zeros flag
-        if 'unemployment_rate' in df_clean.columns:
-            df_clean['unemployment_rate_is_missing'] = df_clean['unemployment_rate'].isna().astype(int)
-
-        # 9. OrdinalEncoder (Transport_Accessibility_Score)
-        if 'Transport_Accessibility_Score' in df_clean.columns and self.oe is not None:
-            # Transport score is sometimes legitimately missing. Treat 0/non-fitted values as missing
-            # so we don't crash inference with "Found unknown categories [0.0]".
-            df_clean['Transport_Accessibility_Score'] = pd.to_numeric(
-                df_clean['Transport_Accessibility_Score'], errors='coerce'
-            )
-            # 0 means "unknown/missing" from scraper defaults, not a real category.
-            df_clean.loc[df_clean['Transport_Accessibility_Score'] <= 0, 'Transport_Accessibility_Score'] = np.nan
-
-            mask = df_clean['Transport_Accessibility_Score'].notna()
-            if mask.sum() > 0:
-                try:
-                    # Filter to known categories (if available) to avoid hard failure.
-                    cats = getattr(self.oe, "categories_", None)
-                    if cats and len(cats) >= 1:
-                        known = set(float(x) for x in cats[0] if x is not None)
-                        known_mask = mask & df_clean['Transport_Accessibility_Score'].isin(known)
-                        if known_mask.sum() > 0:
-                            df_clean.loc[known_mask, 'Transport_Accessibility_Score'] = self.oe.transform(
-                                df_clean.loc[known_mask, ['Transport_Accessibility_Score']]
-                            )
-                        # Unknown values become missing instead of crashing.
-                        df_clean.loc[mask & ~known_mask, 'Transport_Accessibility_Score'] = np.nan
-                    else:
-                        df_clean.loc[mask, 'Transport_Accessibility_Score'] = self.oe.transform(
-                            df_clean.loc[mask, ['Transport_Accessibility_Score']]
-                        )
-                except Exception as e:
-                    logger.warning(f"Error applying OrdinalEncoder (Transport_Accessibility_Score): {e}")
-                    # Worst case: don't break prediction; treat as missing.
-                    df_clean.loc[mask, 'Transport_Accessibility_Score'] = np.nan
-
-        # 10. Date Extractions
-        if 'Date' in df_clean.columns:
-            df_clean['Date'] = pd.to_datetime(df_clean['Date'], errors='coerce', format='mixed')
-            df_clean['Year'] = df_clean['Date'].dt.year
-            df_clean['Month'] = df_clean['Date'].dt.month
-            df_clean['Dayofweek'] = df_clean['Date'].dt.dayofweek
-            df_clean['Is_Weekend'] = df_clean['Dayofweek'].apply(lambda x: 1 if x >= 5 else 0)
-        else:
-            # Default to today if Date isn't provided in the API call
-            from datetime import datetime
-            now = datetime.now()
-            df_clean['Year'] = now.year
-            df_clean['Month'] = now.month
-            df_clean['Dayofweek'] = now.weekday()
-            df_clean['Is_Weekend'] = 1 if now.weekday() >= 5 else 0
-
-        # Construct final ordered DataFrame
-        # Get expected features from the XGBoost sub-model if ensemble, else from the model itself
-        expected_features = getattr(self.model.xgb_model, 'feature_names_in_', getattr(self.model, 'feature_names_in_', []))
+        # Groupings as per training notebook 'preprocessor' define the internal order
+        self.cat_features = ['Nearest_Station_Type', 'Inferred_Brand']
         
-        for f in expected_features:
-            if f not in df_clean.columns:
-                df_clean[f] = np.nan
+        self.num_features = [
+            'avg_household_income', 'unemployment_rate', 'Distance_to_Nearest_Station', 
+            'Transport_Accessibility_Score', 'percent_muslim', 'Days_Since_Open', 
+            'rateable_value', 'distance_to_nearest_station_mi', 
+            'distance_to_mcdonalds_kfc_mi', 'distance_to_mosque_mi', 'distance_to_university_mi', 
+            'workplace_to_resident_ratio', 'ethnic_diversity_index', 'Month', 
+            'DayOfMonth', 'DayOfWeek'
+        ]
         
-        df_final = df_clean[expected_features].copy()
+        self.pass_features = [
+            'is_logistics_strike', 'is_delivery_crackdown', 'is_payday_window', 
+            'is_NYE', 'is_NYD', 'is_Christmas', 'is_month_start', 'is_ramadan', 
+            'is_eid_al_fitr', 'is_eid_al_adha', 'is_Boxing_Day', 'is_covid_lockdown'
+        ]
 
-        # Convert remaining object columns to float to avoid generic native typing errors
-        # (The Ensemble class will handle the explicit categorical conversions internally)
-        cat_features_known = ['Day_of_Week', 'Nearest_Station_Type']
-        for col in df_final.columns:
-            if df_final[col].dtype == 'object' and col not in cat_features_known:
-                 df_final[col] = pd.to_numeric(df_final[col], errors='coerce')
+        # The ColumnTransformer returns columns with 'cat__', 'num__', and 'pass__' prefixes
+        # based on the transformer names defined in the notebook.
+        self.output_features = (
+            [f"cat__{c}" for c in self.cat_features] + 
+            [f"num__{c}" for c in self.num_features] + 
+            [f"pass__{c}" for c in self.pass_features]
+        )
 
-        df_final.columns = [str(c) for c in df_final.columns]
-        return df_final
+        # The ColumnTransformer was FITTED on this exact sequence from X_train
+        training_order = [
+            'avg_household_income', 'unemployment_rate', 'Distance_to_Nearest_Station', 
+            'Nearest_Station_Type', 'Transport_Accessibility_Score', 'is_logistics_strike', 
+            'is_delivery_crackdown', 'is_payday_window', 'is_NYE', 'is_NYD', 'is_Christmas', 
+            'is_month_start', 'percent_muslim', 'is_ramadan', 'is_eid_al_fitr', 
+            'is_eid_al_adha', 'is_Boxing_Day', 'is_covid_lockdown', 'Inferred_Brand', 
+            'Days_Since_Open', 'rateable_value', 'distance_to_nearest_station_mi', 
+            'distance_to_mcdonalds_kfc_mi', 'distance_to_mosque_mi', 'distance_to_university_mi', 
+            'workplace_to_resident_ratio', 'ethnic_diversity_index', 'Month', 
+            'DayOfMonth', 'DayOfWeek'
+        ]
+
+        df = df_raw.copy()
+
+        # Handle Branch Name -> Inferred_Brand mapping
+        # In this V4 implementation, we expect the pipeline/resolver to have already
+        # mapped the string 'McDonalds' to the correct ID (1-7) or 0/Generic.
+        if 'Inferred_Brand' not in df.columns and 'branch_name' in df.columns:
+            # Placeholder: will be replaced by brand_matcher logic in the pipeline
+            df['Inferred_Brand'] = 0 
+            
+        if 'Days_Since_Open' not in df.columns:
+            df['Days_Since_Open'] = 1000.0 # Standard mature site default
+
+        # Re-index to TRAINING sequence to satisfy ColumnTransformer's internal slicing
+        return df[training_order]
 
     def predict(self, raw_data: List[Dict[str, Any]]) -> List[float]:
         """
-        Receives raw unscaled data dictionaries, applies all feature engineering, 
-        and returns the actual predicted £ sales.
+        Full V4 Inference Pipeline:
+        1. Align raw features (30 columns)
+        2. Preprocess (Scaling + Encoding)
+        3. Predict (Ensemble)
+        4. Expm1 (Log -> £)
         """
         if not raw_data:
             return []
 
-        df_raw = pd.DataFrame(raw_data)
-        
-        # 1. Feature Engineer
-        df_processed = self._apply_feature_engineering(df_raw)
-        
-        # 2. Predict (outputs in Log-Space)
-        log_preds = self.model.predict(df_processed)
-        
-        # 3. Transform back to Real £ Sales and clip minimum to £0
-        sales_preds = np.expm1(log_preds)
-        sales_preds = np.clip(sales_preds, a_min=0, a_max=None)
-        
-        return sales_preds.tolist()
+        try:
+            df_raw = pd.DataFrame(raw_data)
+            df_aligned = self._align_features(df_raw)
 
+            # 2. Preprocess: Result is a DataFrame with 'cat__', 'num__', 'pass__' prefixes
+            X_df = self.preprocessor.transform(df_aligned)
+
+            # 3. Clean prefixes: Models (LGBM, RF, ET) were fitted on base names, not CT-prefixed names
+            X_df.columns = [col.split('__')[-1] for col in X_df.columns]
+
+            # 4. Sanitize: NaNs caused by resolver-training gaps can crash TabNet/Ensemble
+            X_df = X_df.fillna(0)
+
+            # 5. Predict: Pass the named DataFrame to the ensemble
+            log_preds = self.ensemble.predict(X_df)
+
+            # Convert to actual £ sales
+            sales_preds = np.expm1(log_preds)
+            sales_preds = np.clip(sales_preds, a_min=0, a_max=None)
+
+            return sales_preds.tolist()
+
+        except Exception as e:
+            logger.error(f"V4 Prediction Pipeline Failed: {e}")
+            # Fallback returning zeros to prevent API 500s during development
+            return [0.0] * len(raw_data)

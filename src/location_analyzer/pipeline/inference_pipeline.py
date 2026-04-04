@@ -15,8 +15,9 @@ class InferencePipeline:
         self.united_resolver = UnitedResolver()
 
     def _get_outercode(self, postcode: str) -> str:
-        """Extracts the outercode from a standard UK format postcode."""
-        return postcode.strip().split()[0].upper()
+        """Robust Outercode Extraction (UK Standard: [Outercode][Incode])"""
+        pc_clean = postcode.replace(" ", "").upper()
+        return pc_clean[:-3] if len(pc_clean) > 3 else pc_clean
 
     def run(self, postcode: str) -> Dict[str, Any]:
         """

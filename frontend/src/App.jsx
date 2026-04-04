@@ -12,8 +12,9 @@ function App() {
   const [requestComplete, setRequestComplete] = useState(false) // backend finished; show 100% then hide
   const [error, setError] = useState(null)
   const [result, setResult] = useState(null)
+  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
-  const handlePredict = async (postcode, branchName = "", forceRefresh = false, dateRange = {}) => {
+  const handlePredict = async (postcode, branchName = "", dateRange = {}) => {
     if (!postcode.trim()) {
       setError("Please enter a valid UK postcode.")
       return
@@ -25,17 +26,19 @@ function App() {
     setResult(null)
 
     try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || '';
       const response = await axios.post(`${apiBase}/predict`, {
         postcode: postcode,
         branch_name: branchName,
-        force_refresh: forceRefresh,
         from_month: dateRange.from_month || null,
         from_year: dateRange.from_year || null,
         to_month: dateRange.to_month || null,
         to_year: dateRange.to_year || null,
-        inflate_sales: dateRange.inflate_sales || false,
-        inflate_amount: dateRange.inflate_amount || null,
+        inflate_sales: false,
+        inflate_amount: null,
+        is_logistics_strike: false,
+        is_delivery_crackdown: false,
+        inferred_brand_override: null,
+        days_since_open: 1000,
       }, {
         timeout: 300000,
         headers: { 'ngrok-skip-browser-warning': 'true' }
@@ -71,9 +74,21 @@ function App() {
         </div>
 
         <PredictionForm onPredict={handlePredict} isLoading={loading} />
+        
+        {!result && !loading && !error && (
+          <div className="glass-card animate-slide-up" style={{ padding: "1.5rem", textAlign: "center", marginTop: "1rem" }}>
+            <div style={{ background: "rgba(59, 130, 246, 0.1)", width: "48px", height: "48px", borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 1rem" }}>
+              <MapPin size={24} color="var(--accent-primary)" />
+            </div>
+            <h3 style={{ fontSize: "0.95rem", marginBottom: "0.5rem" }}>Ready to Analyze</h3>
+            <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", lineHeight: "1.4" }}>
+              Enter a UK postcode to start your deep-dive location analysis and sales forecast.
+            </p>
+          </div>
+        )}
 
         {error && (
-          <div className="glass-card animate-slide-up" style={{ padding: "1rem", borderLeft: "4px solid var(--accent-danger)", backgroundColor: "rgba(239, 68, 68, 0.1)" }}>
+          <div className="glass-card animate-slide-up" style={{ padding: "1rem", borderLeft: "4px solid var(--accent-danger)", backgroundColor: "rgba(239, 68, 68, 0.1)", marginTop: "1rem" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--accent-danger)", fontWeight: "600", marginBottom: "0.25rem" }}>
               <AlertCircle size={18} />
               Prediction Error
@@ -93,7 +108,7 @@ function App() {
 
         {/* Floating results panel that appears after prediction */}
         {result && !loading && (
-          <ResultsPanel result={result} />
+          <ResultsPanel result={result} apiBase={apiBase} />
         )}
       </main>
     </div>

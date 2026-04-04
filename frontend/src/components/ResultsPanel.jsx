@@ -156,7 +156,7 @@ function CollapsiblePanel({ title, defaultOpen = true, children }) {
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
-export default function ResultsPanel({ result }) {
+export default function ResultsPanel({ result, apiBase }) {
     const [granularity, setGranularity] = useState('monthly');
     const [isMinimized, setIsMinimized] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
@@ -216,7 +216,7 @@ export default function ResultsPanel({ result }) {
                 display_data: result.display_data || {}
             };
 
-            const response = await fetch('/export-plot', {
+            const response = await fetch(`${apiBase}/export-plot`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -267,8 +267,6 @@ export default function ResultsPanel({ result }) {
     // ── Demographics KV rows (always available from Nomis)
     const DEMO_ROWS = [
         { key: 'postcode', label: 'Postcode', fmt: v => v },
-        { key: 'Branch Name', label: 'Branch', fmt: v => v },
-        { key: 'Inferred_Brand', label: 'Brand', fmt: v => v },
         { key: 'population', label: 'Population', fmt: v => Number(v).toLocaleString() },
         { key: 'households', label: 'Households', fmt: v => Number(v).toLocaleString() },
         { key: 'avg_household_income', label: 'Avg Income', fmt: fmtMoney },
@@ -277,9 +275,12 @@ export default function ResultsPanel({ result }) {
         { key: 'ab', label: 'AB Class', fmt: fmtPct },
         { key: 'c1/c2', label: 'C1/C2 Class', fmt: fmtPct },
         { key: 'de', label: 'DE Class', fmt: fmtPct },
-        { key: 'white', label: 'White', fmt: fmtPct },
         { key: 'non-white', label: 'Non-White', fmt: fmtPct },
-        { key: 'Transport_Accessibility_Score', label: 'Transport Score', fmt: v => `${v}/9` },
+        { key: 'percent_muslim', label: 'Muslim Pop %', fmt: fmtPct },
+        { key: 'ethnic_diversity_index', label: 'Diversity Index', fmt: v => v ? Number(v).toFixed(3) : '—' },
+        { key: 'workplace_to_resident_ratio', label: 'Workplace Ratio', fmt: v => v ? Number(v).toFixed(2) : '—' },
+        { key: 'rateable_value', label: 'Rateable Value', fmt: v => v ? `£${Number(v).toLocaleString()}` : '—' },
+        { key: 'Transport_Accessibility_Score', label: 'Transport Score', fmt: v => v ? `${v}/9` : '—' },
         { key: 'Nearby_Station_Count', label: 'Nearby Stations', fmt: v => v },
         { key: 'Distance_to_Nearest_Station', label: 'Nearest Station', fmt: v => `${Number(v).toFixed(2)} mi` },
         { key: 'Nearest_Station_Type', label: 'Station Type', fmt: v => v },

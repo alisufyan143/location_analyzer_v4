@@ -1,6 +1,37 @@
 import React, { forwardRef } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
+const ReportTable = ({ title, columns, data }) => {
+    if (!data || data.length === 0) return null;
+    return (
+        <div style={{ marginBottom: '30px' }}>
+            <h3 style={{ fontSize: '18px', marginBottom: '15px', color: '#f8fafc' }}>{title} ({data.length})</h3>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', background: 'rgba(30, 41, 59, 0.3)', borderRadius: '8px', overflow: 'hidden' }}>
+                <thead>
+                    <tr style={{ background: 'rgba(255,255,255,0.1)' }}>
+                        {columns.map((col, idx) => (
+                            <th key={idx} style={{ padding: '10px 15px', textAlign: col.align || 'left', color: '#94a3b8', width: col.width }}>
+                                {col.header}
+                            </th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody>
+                    {data.map((row, rowIdx) => (
+                        <tr key={rowIdx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                            {columns.map((col, colIdx) => (
+                                <td key={colIdx} style={{ padding: '10px 15px', textAlign: col.align || 'left', fontWeight: col.bold ? 'bold' : 'normal', color: col.color || 'inherit' }}>
+                                    {col.accessor(row)}
+                                </td>
+                            ))}
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
+};
+
 const ReportLayout = forwardRef(({ result }, ref) => {
     if (!result) return null;
 
@@ -14,7 +45,6 @@ const ReportLayout = forwardRef(({ result }, ref) => {
 
     // ── Additional Data Parsing ──
     const dd = result.display_data || {};
-    const affluence = dd.affluence || {};
 
     const OCCI_LABELS = [
         'managerial and professional',
@@ -34,9 +64,6 @@ const ReportLayout = forwardRef(({ result }, ref) => {
     const occRows = OCCI_LABELS
         .filter(k => occupation[k] !== undefined)
         .map(k => ({ name: k.replace(/\b\w/g, c => c.toUpperCase()), pct: occupation[k] }));
-    const otherOccRows = Object.entries(occupation)
-        .filter(([k]) => !OCCI_LABELS.includes(k))
-        .map(([k, v]) => ({ name: k.replace(/\b\w/g, c => c.toUpperCase()), pct: v }));
 
     const ethnicity = dd.ethnicity || {};
     const ethSections = ethnicity.sections || {};
@@ -59,37 +86,6 @@ const ReportLayout = forwardRef(({ result }, ref) => {
         if (v === null || v === undefined) return '—';
         if (v <= 1.0) return `${(v * 100).toFixed(1)}%`;
         return `${Number(v).toFixed(1)}%`;
-    };
-
-    const ReportTable = ({ title, columns, data }) => {
-        if (!data || data.length === 0) return null;
-        return (
-            <div style={{ marginBottom: '30px' }}>
-                <h3 style={{ fontSize: '18px', marginBottom: '15px', color: '#f8fafc' }}>{title} ({data.length})</h3>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', background: 'rgba(30, 41, 59, 0.3)', borderRadius: '8px', overflow: 'hidden' }}>
-                    <thead>
-                        <tr style={{ background: 'rgba(255,255,255,0.1)' }}>
-                            {columns.map((col, idx) => (
-                                <th key={idx} style={{ padding: '10px 15px', textAlign: col.align || 'left', color: '#94a3b8', width: col.width }}>
-                                    {col.header}
-                                </th>
-                            ))}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {data.map((row, rowIdx) => (
-                            <tr key={rowIdx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                {columns.map((col, colIdx) => (
-                                    <td key={colIdx} style={{ padding: '10px 15px', textAlign: col.align || 'left', fontWeight: col.bold ? 'bold' : 'normal', color: col.color || 'inherit' }}>
-                                        {col.accessor(row)}
-                                    </td>
-                                ))}
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        );
     };
 
     return (
@@ -199,6 +195,14 @@ const ReportLayout = forwardRef(({ result }, ref) => {
                                 <td style={{ padding: '8px', borderBottom: '1px solid rgba(255,255,255,0.05)', color: '#94a3b8' }}>Transport Score</td>
                                 <td style={{ padding: '8px', borderBottom: '1px solid rgba(255,255,255,0.05)', textAlign: 'right', fontWeight: 'bold' }}>{f.Transport_Accessibility_Score}/9</td>
                             </tr>
+                            <tr>
+                                <td style={{ padding: '8px', borderBottom: '1px solid rgba(255,255,255,0.05)', color: '#94a3b8' }}>Muslim Pop %</td>
+                                <td style={{ padding: '8px', borderBottom: '1px solid rgba(255,255,255,0.05)', textAlign: 'right', fontWeight: 'bold' }}>{fmtPct(f.percent_muslim)}</td>
+                            </tr>
+                            <tr>
+                                <td style={{ padding: '8px', borderBottom: '1px solid rgba(255,255,255,0.05)', color: '#94a3b8' }}>Diversity Index</td>
+                                <td style={{ padding: '8px', borderBottom: '1px solid rgba(255,255,255,0.05)', textAlign: 'right', fontWeight: 'bold' }}>{f.ethnic_diversity_index ? Number(f.ethnic_diversity_index).toFixed(3) : '—'}</td>
+                            </tr>
                         </tbody>
                     </table>
 
@@ -215,6 +219,14 @@ const ReportLayout = forwardRef(({ result }, ref) => {
                             <tr>
                                 <td style={{ padding: '8px', borderBottom: '1px solid rgba(255,255,255,0.05)', color: '#94a3b8' }}>DE Class (Low)</td>
                                 <td style={{ padding: '8px', borderBottom: '1px solid rgba(255,255,255,0.05)', textAlign: 'right', fontWeight: 'bold', color: '#e74c3c' }}>{fmtPct(f.de)}</td>
+                            </tr>
+                            <tr>
+                                <td style={{ padding: '8px', borderBottom: '1px solid rgba(255,255,255,0.05)', color: '#94a3b8' }}>Workplace Ratio</td>
+                                <td style={{ padding: '8px', borderBottom: '1px solid rgba(255,255,255,0.05)', textAlign: 'right', fontWeight: 'bold' }}>{f.workplace_to_resident_ratio ? Number(f.workplace_to_resident_ratio).toFixed(2) : '—'}</td>
+                            </tr>
+                            <tr>
+                                <td style={{ padding: '8px', borderBottom: '1px solid rgba(255,255,255,0.05)', color: '#94a3b8' }}>Rateable Value</td>
+                                <td style={{ padding: '8px', borderBottom: '1px solid rgba(255,255,255,0.05)', textAlign: 'right', fontWeight: 'bold' }}>{f.rateable_value ? `£${Number(f.rateable_value).toLocaleString()}` : '—'}</td>
                             </tr>
                         </tbody>
                     </table>

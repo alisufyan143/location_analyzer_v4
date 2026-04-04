@@ -22,7 +22,6 @@ export default function MapArea({ result }) {
     // For now, let's pretend the backend returned [53.4808, -2.2426] (Manchester) as a dummy for visual testing
     // if not supplied.
     const mapCenter = result?.features?.lat ? [result.features.lat, result.features.lng] : defaultCenter
-    const isDefault = !result
 
     return (
         <div style={{ height: '100%', width: '100%', position: 'relative' }}>

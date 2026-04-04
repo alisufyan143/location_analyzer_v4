@@ -6,6 +6,7 @@ indexed in the local uk_master.db.
 
 import sqlite3
 import math
+import os
 import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -91,8 +92,19 @@ class ScotlandResolver:
             features["avg_household_income"] = float(i['weekly_median_income']) * 52
             features["households"] = int(i["households"])
 
-        # 2. Demographics (Census 2022) - 2022 Data Zone based
-        cursor.execute("SELECT * FROM scot_census WHERE dz2022 = ?", (dz22,))
+        # 2. Demographics (Census 2022) & V4 Area Metrics
+        # Join Census with the propagated area_metrics (Rateable Value, etc.)
+        query = """
+            SELECT 
+                c.*, 
+                am.rateable_value, 
+                am.workplace_ratio as workplace_to_resident_ratio, 
+                am.diversity_index as ethnic_diversity_index
+            FROM scot_census c
+            LEFT JOIN area_metrics am ON am.area_code = c.dz2022
+            WHERE c.dz2022 = ?
+        """
+        cursor.execute(query, (dz22,))
         c = cursor.fetchone()
         if c:
             pop = c["pop"] if c["pop"] > 0 else features.get("population", 1)
@@ -110,8 +122,32 @@ class ScotlandResolver:
             features["c1/c2"] = round(c1c2_raw / nssec_total, 4)
             features["de"] = round(de_raw / nssec_total, 4)
 
-        # 3. Transport (Distance in Miles)
-        if lat and lng:
+            # V4 Regional Metrics
+            features["rateable_value"] = c["rateable_value"]
+            features["workplace_to_resident_ratio"] = c["workplace_to_resident_ratio"]
+            features["ethnic_diversity_index"] = c["ethnic_diversity_index"]
+
+        # 3. POI Distance Joins (V4 Parity) - Using the standardized flattened postcode_distances table
+        query_dist = """
+            SELECT 
+                distance_to_mosque_mi, 
+                distance_to_university_mi, 
+                distance_to_mcdonalds_kfc_mi,
+                distance_to_nearest_station_mi
+            FROM postcode_distances 
+            WHERE postcode_clean = ?
+        """
+        cursor.execute(query_dist, (pc_clean,))
+        row_dist = cursor.fetchone()
+        
+        features["distance_to_mosque_mi"] = row_dist['distance_to_mosque_mi'] if row_dist else 10.0
+        features["distance_to_university_mi"] = row_dist['distance_to_university_mi'] if row_dist else 10.0
+        features["distance_to_mcdonalds_kfc_mi"] = row_dist['distance_to_mcdonalds_kfc_mi'] if row_dist else 10.0
+        features["distance_to_nearest_station_mi"] = row_dist['distance_to_nearest_station_mi'] if row_dist else 10.0
+        features["Distance_to_Nearest_Station"] = features["distance_to_nearest_station_mi"]
+
+        # 4. Transport (Distance in Miles) - Fallback/Count logic
+        if lat and lng and features["Distance_to_Nearest_Station"] == 10.0:
             cursor.execute("SELECT lat, lng, type FROM scot_stations")
             stations = cursor.fetchall()
             if stations:
@@ -124,9 +160,15 @@ class ScotlandResolver:
                     if d <= 2.0: # 2km radius count
                         n_count += 1
                 
-                features["Distance_to_Nearest_Station"] = round(min_dist_km * 0.621371, 3)
+                dist_mi = round(min_dist_km * 0.621371, 3)
+                features["Distance_to_Nearest_Station"] = dist_mi
+                features["distance_to_nearest_station_mi"] = dist_mi
                 features["Nearby_Station_Count"] = n_count
                 features["Nearest_Station_Type"] = n_type
+        else:
+            # Default counts if we didn't run the station loop
+            features.setdefault("Nearby_Station_Count", 1)
+            features.setdefault("Nearest_Station_Type", "Railway Station")
 
         return features
 

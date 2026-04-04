@@ -2,11 +2,11 @@ import { useState, useEffect } from 'react'
 import { Loader2, Database, Map, Cpu, CheckCircle } from 'lucide-react'
 
 const steps = [
-    { text: "Checking saved data & fetching postcode...", icon: Database, delay: 0 },
-    { text: "Extracting demographics (Nomis & Doogal)...", icon: UsersIcon, delay: 15 },
-    { text: "Scanning transport & amenities...", icon: Map, delay: 40 },
-    { text: "Running ML ensemble (XGBoost & LightGBM)...", icon: Cpu, delay: 65 },
-    { text: "Finalizing 12‑month forecast...", icon: CheckCircle, delay: 85 }
+    { text: "Initializing analysis...", icon: Database, delay: 0 },
+    { text: "Scraping UK regional data...", icon: Map, delay: 20 },
+    { text: "Mapping demographics...", icon: Database, delay: 45 },
+    { text: "Executing V4 Meta-Ensemble...", icon: Cpu, delay: 70 },
+    { text: "Finalizing 52-week forecast...", icon: CheckCircle, delay: 90 }
 ]
 const completedStep = { text: "Complete!", icon: CheckCircle }
 

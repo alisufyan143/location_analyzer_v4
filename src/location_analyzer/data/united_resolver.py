@@ -113,37 +113,54 @@ class UnitedResolver:
                     logger.info(f"Routing {postcode} to NI Offline Logic (LAD: {lad_code})")
                     return self._resolve_ni_features(geo, postcode, outercode, lat, lon, cursor)
 
-            # 3. England/Wales Resolution (Master DB joins)
+            # 3. England/Wales/NI Resolution (Master DB joins)
             oa = geo['oa21']
             lsoa = geo['lsoa21']
             msoa = geo['msoa21']
 
-            # Detailed Census + IMD + Income Join
+            # Expanded 3-Way Join: Census + IMD + Income + Area Metrics
             query = """
                 SELECT
-                    c.population, c.households,
-                    c.white, c.non_white, c.percent_muslim,
-                    c.unemployment_rate, c.working, c.unemployed,
-                    c.ab, c.c1c2, c.de,
-                    i.income_score, i.employment_score,
+                    c.*, 
+                    am.rateable_value, 
+                    am.workplace_ratio as workplace_to_resident_ratio, 
+                    am.diversity_index as ethnic_diversity_index,
                     mi.total_annual_income as avg_household_income
                 FROM census_data c
-                LEFT JOIN imd_data i ON i.lsoa_code = ?
+                LEFT JOIN area_metrics am ON am.area_code = c.oa_code
                 LEFT JOIN msoa_income mi ON mi.msoa_code = ?
                 WHERE c.oa_code = ?
             """
-            cursor.execute(query, (lsoa, msoa, oa))
+            cursor.execute(query, (msoa, oa))
             data = cursor.fetchone()
 
             if not data:
                 logger.warning(f"No demographic coverage for OA {oa} (Postcode: {postcode})")
                 return {}
 
-            # 4. Assemble Feature Dict (exact V3 contract)
+            # 4. POI Distance Joins (Specific V4 required distances)
+            # These are already flattened in the postcode_distances table
+            query_dist = """
+                SELECT 
+                    distance_to_mosque_mi, 
+                    distance_to_university_mi, 
+                    distance_to_mcdonalds_kfc_mi,
+                    distance_to_nearest_station_mi
+                FROM postcode_distances 
+                WHERE postcode_clean = ?
+            """
+            cursor.execute(query_dist, (pc_clean,))
+            row_dist = cursor.fetchone()
+            
+            dist_mosque = row_dist['distance_to_mosque_mi'] if row_dist else 10.0
+            dist_uni = row_dist['distance_to_university_mi'] if row_dist else 10.0
+            dist_mcd_kfc = row_dist['distance_to_mcdonalds_kfc_mi'] if row_dist else 10.0
+            dist_station = row_dist['distance_to_nearest_station_mi'] if row_dist else 10.0
+
+            # 5. Assemble Feature Dict (V4 Contract)
             features = {
                 "postcode": postcode,
                 "outercode": outercode,
-                "msoa": msoa,
                 "lat": lat,
                 "lng": lon,
                 "population": data['population'],
@@ -158,6 +175,14 @@ class UnitedResolver:
                 "ab": data['ab'],
                 "c1/c2": data['c1c2'],
                 "de": data['de'],
+                # V4 New Metrics
+                "rateable_value": data['rateable_value'],
+                "workplace_to_resident_ratio": data['workplace_to_resident_ratio'],
+                "ethnic_diversity_index": data['ethnic_diversity_index'],
+                # POI Distances
+                "distance_to_mosque_mi": dist_mosque,
+                "distance_to_university_mi": dist_uni,
+                "distance_to_mcdonalds_kfc_mi": dist_mcd_kfc
             }
 
             # 5. Transport Resolution
@@ -301,6 +326,40 @@ class UnitedResolver:
 
     def _resolve_ni_features(self, geo: sqlite3.Row, postcode: str, outercode: str, lat: float, lon: float, cursor: sqlite3.Cursor) -> Dict[str, Any]:
         """Specific logic for Northern Ireland Data Zone (DZ) resolution."""
+        features = self._resolve_ni_features_core(geo, postcode, outercode, lat, lon, cursor)
+        
+        # V4 Parity: Pull ethnic_diversity_index & workplace_to_resident_ratio
+        # from location_analyzer.db (ingested via NI Census Protocol)
+        try:
+            root = Path(__file__).resolve().parents[3]
+            app_db = str(root / "data" / "location_analyzer.db")
+            app_conn = sqlite3.connect(app_db)
+            app_conn.row_factory = sqlite3.Row
+            row = app_conn.execute(
+                "SELECT ethnic_diversity_index, workplace_to_resident_ratio, rateable_value "
+                "FROM postcode_area_demographics WHERE postcode = ?",
+                (postcode,)
+            ).fetchone()
+            app_conn.close()
+            if row:
+                features["ethnic_diversity_index"] = row["ethnic_diversity_index"]
+                features["workplace_to_resident_ratio"] = row["workplace_to_resident_ratio"]
+                features["rateable_value"] = row["rateable_value"]
+        except Exception as e:
+            logger.debug(f"NI V4 lookup failed for {postcode}: {e}")
+
+        # Ensure keys exist with defaults if lookup failed
+        # V4 Key Parity (Capitalization)
+        if "distance_to_nearest_station_mi" in features:
+            features["Distance_to_Nearest_Station"] = features["distance_to_nearest_station_mi"]
+            
+        for key in ["distance_to_mosque_mi", "distance_to_university_mi", "distance_to_mcdonalds_kfc_mi"]:
+            if key not in features: features[key] = 10.0
+            
+        return features
+
+    def _resolve_ni_features_core(self, geo: sqlite3.Row, postcode: str, outercode: str, lat: float, lon: float, cursor: sqlite3.Cursor) -> Dict[str, Any]:
+        """Specific logic for Northern Ireland Data Zone (DZ) resolution."""
         oa = geo['oa21']  # Data Zone code is stored in oa21 column
         
         query = """
@@ -385,6 +444,7 @@ class UnitedResolver:
 
         return {
             "Distance_to_Nearest_Station": round(dist_mi, 3),
+            "distance_to_nearest_station_mi": round(dist_mi, 3), # V4 Naming Parity
             "Nearby_Station_Count": nearby_count,
             "Nearest_Station_Type": mapped_type,
             "Transport_Accessibility_Score": self._calculate_transport_score(dist_mi),
