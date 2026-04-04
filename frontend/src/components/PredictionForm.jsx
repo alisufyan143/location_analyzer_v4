@@ -10,8 +10,8 @@ const MONTHS = [
     { value: 11, label: 'November' }, { value: 12, label: 'December' },
 ]
 
-// Generate year options: 2020 → 2028
-const YEARS = Array.from({ length: 9 }, (_, i) => 2020 + i)
+// Generate year options: 2010 → 2030
+const YEARS = Array.from({ length: 21 }, (_, i) => 2010 + i)
 
 const SELECT_STYLE = {
     background: 'var(--bg-secondary)',
@@ -46,7 +46,7 @@ export default function PredictionForm({ onPredict, isLoading }) {
     const handleSubmit = (e) => {
         e.preventDefault()
         if (dateError) return
-        onPredict(postcode, branchName, false, {
+        onPredict(postcode, branchName, {
             from_month: fromMonth, from_year: fromYear,
             to_month: toMonth, to_year: toYear,
             inflate_sales: false,

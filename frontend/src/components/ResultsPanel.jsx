@@ -255,10 +255,14 @@ export default function ResultsPanel({ result, apiBase }) {
         : result.predicted_sales;
 
     const xAxisFormatter = (dateStr) => {
-        if (!dateStr || granularity === 'monthly') return dateStr;
+        if (!dateStr) return dateStr;
         try {
             const date = new Date(dateStr);
-            return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+            if (granularity === 'daily') {
+                return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+            }
+            // For Weekly and Monthly, always show the year for clarity in 2010-2030 range
+            return date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
         } catch (e) {
             return dateStr;
         }
@@ -484,7 +488,11 @@ export default function ResultsPanel({ result, apiBase }) {
                                 <div style={{
                                     height: '350px', // Fixed height for Recharts stability
                                     minHeight: '220px',
-                                    minWidth: granularity === 'daily' ? '3000px' : granularity === 'weekly' ? '1200px' : '100%'
+                                    minWidth: 
+                                        granularity === 'daily' ? '3000px' : 
+                                        granularity === 'weekly' ? '1200px' : 
+                                        // Monthly: Scaled by number of months to keep labels readable (min 100%)
+                                        chartData.length > 12 ? `${chartData.length * 50}px` : '100%'
                                 }}>
                                     <ResponsiveContainer width="100%" height="100%">
                                         <AreaChart data={chartData} margin={{ top: 10, right: 30, left: -10, bottom: 0 }}>

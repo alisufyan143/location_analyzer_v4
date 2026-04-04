@@ -11,9 +11,9 @@ class PredictRequest(BaseModel):
     branch_name: Optional[str] = Field(None, description="Optional name of the branch.")
     force_refresh: bool = Field(False, description="If true, bypasses DB cache and forces a live scrape.")
     from_month: Optional[int] = Field(None, ge=1, le=12, description="Start month (1-12). Defaults to current month.")
-    from_year: Optional[int] = Field(None, ge=2020, le=2028, description="Start year. Defaults to current year.")
+    from_year: Optional[int] = Field(None, ge=2010, le=2030, description="Start year. Defaults to current year.")
     to_month: Optional[int] = Field(None, ge=1, le=12, description="End month (1-12). Defaults to 12 months from now.")
-    to_year: Optional[int] = Field(None, ge=2020, le=2028, description="End year. Defaults to 12 months from now.")
+    to_year: Optional[int] = Field(None, ge=2010, le=2030, description="End year. Defaults to 12 months from now.")
     inflate_sales: bool = Field(False, description="If true, adds weekly inflation adjustment to predictions.")
     inflate_amount: Optional[float] = Field(None, ge=0, description="Weekly inflation amount in £. Used only when inflate_sales is true.")
     

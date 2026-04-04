@@ -33,12 +33,12 @@ function App() {
         from_year: dateRange.from_year || null,
         to_month: dateRange.to_month || null,
         to_year: dateRange.to_year || null,
-        inflate_sales: false,
-        inflate_amount: null,
-        is_logistics_strike: false,
-        is_delivery_crackdown: false,
-        inferred_brand_override: null,
-        days_since_open: 1000,
+        inflate_sales: dateRange.inflate_sales ?? false,
+        inflate_amount: dateRange.inflate_amount ?? null,
+        is_logistics_strike: dateRange.is_logistics_strike ?? false,
+        is_delivery_crackdown: dateRange.is_delivery_crackdown ?? false,
+        inferred_brand_override: dateRange.inferred_brand_override ?? null,
+        days_since_open: dateRange.days_since_open ?? 1000,
       }, {
         timeout: 300000,
         headers: { 'ngrok-skip-browser-warning': 'true' }

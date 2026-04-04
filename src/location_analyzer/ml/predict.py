@@ -116,6 +116,9 @@ class V4EnsembleModel(BaseEstimator, RegressorMixin):
                         applied_weights.append(weight)
                     except:
                         pass
+            
+            if len(preds) > 0:
+                logger.debug(f"  [MODEL %s] raw_pred_log=%.4f (weight=%.2f)", key, preds[-1]/weight, weight)
 
         if not preds:
             raise ValueError("All sub-models failed to predict. Check input feature consistency and shape.")
@@ -137,6 +140,8 @@ class PredictionService:
         self.model_dir = model_dir
         self.preprocessor = None
         self.ensemble = None
+        self.cpi_df = None
+        self.base_cpi = 144.03  # 2024 Average CPI (Baseline for V4 training)
         self._load_artifacts()
 
     def _load_artifacts(self):
@@ -154,9 +159,69 @@ class PredictionService:
 
             self.ensemble = V4EnsembleModel(self.model_dir)
             
+            # 3. Load CPI Data for Nominal Scaling
+            # Usually stored in models/v3 or models/v4 as shared resource
+            cpi_path = os.path.join(os.path.dirname(self.model_dir), "v3", "cpi_d7ew_restaurants.csv")
+            if not os.path.exists(cpi_path):
+                 # Fallback if v3 relative path doesn't exist (e.g. standalone test)
+                 cpi_path = os.path.join(self.model_dir, "cpi_d7ew_restaurants.csv")
+            
+            if os.path.exists(cpi_path):
+                self.cpi_df = pd.read_csv(cpi_path)
+                logger.info(f"Loaded CPI data from {cpi_path} for nominal scaling.")
+            else:
+                logger.warning(f"CPI data not found at {cpi_path}. Backtesting and future forecasting will use 2024 price levels.")
+            
         except Exception as e:
             logger.error(f"PredictionService Init Failed: {e}")
             raise RuntimeError(f"PredictionService Init Failed: {e}")
+
+
+    def _get_cpi_multiplier(self, year: int, month: int) -> float:
+        """
+        Calculates the (target_cpi / base_cpi_2024) multiplier.
+        Includes rolling extrapolation for dates beyond the known CPI dataset (pre-2026).
+        """
+        if self.cpi_df is None:
+            return 1.0  # Fallback: No scaling
+
+        # 1. Direct Lookup
+        row = self.cpi_df[(self.cpi_df["Year"] == year) & (self.cpi_df["Month"] == month)]
+        if not row.empty:
+            target_cpi = float(row["CPI_D7EW"].iloc[0])
+            multiplier = target_cpi / self.base_cpi
+            logger.info(f"  [CPI LOOKUP] target={year}-{month}  target_cpi={target_cpi}  base_cpi={self.base_cpi}  multiplier=%.4f", multiplier)
+            return multiplier
+
+        # 2. Extrapolation (Future) or Clipping (Deep Past)
+        last_row = self.cpi_df.iloc[-1]
+        last_year = int(last_row["Year"])
+        last_month = int(last_row["Month"])
+        last_cpi = float(last_row["CPI_D7EW"])
+
+        # Calculate months difference
+        months_diff = (year - last_year) * 12 + (month - last_month)
+
+        if months_diff <= 0:
+            # We are in the past relative to the dataset end, but didn't find the specific year/month
+            # This happens if querying pre-1988 (unlikely) or if there are gaps.
+            # Clip to the oldest available if before range, or use last available if between points.
+            return last_cpi / self.base_cpi
+
+        # Rolling Extrapolation Logic:
+        # Calculate trailing 12-month annual inflation rate
+        recent_12 = self.cpi_df.tail(12)
+        if len(recent_12) >= 12:
+            annual_rate = (recent_12["CPI_D7EW"].iloc[-1] / recent_12["CPI_D7EW"].iloc[0]) - 1
+            # Multiplier per month (Geometric mean)
+            monthly_rate = (1 + annual_rate) ** (1/12) - 1
+        else:
+            monthly_rate = (1 + 0.025) ** (1/12) - 1 # Fallback 2.5% annual
+
+        extrapolated_cpi = last_cpi * ((1 + monthly_rate) ** months_diff)
+        multiplier = extrapolated_cpi / self.base_cpi
+        logger.info(f"  [CPI EXTRAPOLATION] target={year}-{month}  extrapolated_cpi=%.2f  multiplier=%.4f", extrapolated_cpi, multiplier)
+        return multiplier
 
     def _align_features(self, df_raw: pd.DataFrame) -> pd.DataFrame:
         """
@@ -230,6 +295,12 @@ class PredictionService:
 
         try:
             df_raw = pd.DataFrame(raw_data)
+            
+            # Log first sample features for visibility
+            if not df_raw.empty:
+                first_sample = df_raw.iloc[0].to_dict()
+                logger.info(f"  [ML INPUT SAMPLE] %s", json.dumps(first_sample, indent=2))
+            
             df_aligned = self._align_features(df_raw)
 
             # 2. Preprocess: Result is a DataFrame with 'cat__', 'num__', 'pass__' prefixes
@@ -244,11 +315,29 @@ class PredictionService:
             # 5. Predict: Pass the named DataFrame to the ensemble
             log_preds = self.ensemble.predict(X_df)
 
-            # Convert to actual £ sales
-            sales_preds = np.expm1(log_preds)
-            sales_preds = np.clip(sales_preds, a_min=0, a_max=None)
+            # 6. Convert to actual £ sales (Log -> Nominal)
+            sales_preds_base = np.expm1(log_preds)
+            sales_preds_base = np.clip(sales_preds_base, a_min=0, a_max=None)
 
-            return sales_preds.tolist()
+            # 7. Apply CPI-Based Nominal Scaling (Back-deflation / Inflation)
+            # Use the first date in raw_data if multiple, or map 1-to-1 if granular
+            # In V4 predict(), raw_data is a list of days.
+            nominal_sales = []
+            for i, p_base in enumerate(sales_preds_base):
+                # Extract year/month from the input day features
+                day_data = raw_data[i]
+                # Fallback to 2024 if dates aren't in input (shouldn't happen in routes.py flow)
+                y = day_data.get("Year", day_data.get("year", 2024))
+                m = day_data.get("Month", day_data.get("month", 1))
+                
+                multiplier = self._get_cpi_multiplier(int(y), int(m))
+                if i == 0:
+                    logger.info(f"  [NOMINAL CALIBRATION] month=1  y={y}  m={m}  multiplier=%.4f", multiplier)
+                
+                nominal_sales.append(float(p_base * multiplier))
+
+            logger.info("  [ML OUTPUT] Predicted Sales (Month 1): £%.2f", nominal_sales[0])
+            return nominal_sales
 
         except Exception as e:
             logger.error(f"V4 Prediction Pipeline Failed: {e}")
