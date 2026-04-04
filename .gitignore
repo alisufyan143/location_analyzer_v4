@@ -228,3 +228,4 @@ location_analyzer.db
 Dataset/
 tmp/
 models/
+.vscode/
