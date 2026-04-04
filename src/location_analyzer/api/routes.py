@@ -1,9 +1,7 @@
 import asyncio
 import calendar
 import logging
-import json
-import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from location_analyzer.api.schemas import PredictRequest, PredictResponse, TimeSeriesPrediction, GranularTimeSeries, PlotExportRequest
@@ -106,6 +104,10 @@ async def predict_sales(request_body: PredictRequest, request: Request):
     # ── Phase R5: ML Inference (user-defined date range) ──────────────────────
     _log_phase("R5", "V3 ML Model Inference", f"features_count={len(features)}")
 
+    import pandas as pd
+    from datetime import timedelta
+    import calendar
+
     now = datetime.now()
 
     # ── Resolve date range from request or use sensible defaults ──────────────
@@ -137,17 +139,6 @@ async def predict_sales(request_body: PredictRequest, request: Request):
     _log_phase("R5a", "Date Range Resolved",
                f"from={from_year}-{from_month:02d} to={to_year}-{to_month:02d} "
                f"({int((range_end - range_start).days)} days)")
-    
-    # 2. Determine Brand Name and situational flags
-    brand_name = request_body.inferred_brand_override
-    if brand_name is None:
-        brand_name = BrandMatcher.get_brand_id(request_body.branch_name) # Returns string in V4
-    
-    logger.info(f"  [PHASE R5 CONTEXT] Inferred_Brand={brand_name}  Days_Since_Open={request_body.days_since_open}")
-    
-    # Log base features being used for inference (Phase R4/R5 input)
-    logger.info(f"  [PHASE R5 INPUT] Master Features (Top 20):\n%s", 
-                json.dumps({k: features[k] for k in list(features.keys())[:20]}, indent=2))
 
     # 1. Generate all daily dates across the range
     daily_dates = []
@@ -175,8 +166,8 @@ async def predict_sales(request_body: PredictRequest, request: Request):
         temporal_flags = CalendarUtility.get_features_for_date(d, situational)
         f_day.update(temporal_flags)
         
-        # Inject Contextual Metadata (V4 expects strings for Inferred_Brand)
-        f_day["Inferred_Brand"] = brand_name
+        # Inject Contextual Metadata
+        f_day["Inferred_Brand"] = brand_id
         f_day["Days_Since_Open"] = request_body.days_since_open
         
         pred_features.append(f_day)
@@ -223,20 +214,16 @@ async def predict_sales(request_body: PredictRequest, request: Request):
     end_of_range = datetime(to_year, to_month, 1)
     while month_cursor <= end_of_range:
         y, m = month_cursor.year, month_cursor.month
-        
-        # 1. Sum all daily predictions for this month
+        # Sum all daily predictions that fall in this year-month
         month_sum = sum(
             p for d, p in zip(daily_dates, raw_preds)
             if d.year == y and d.month == m
         )
-        
         _, days_in_month  = calendar.monthrange(y, m)
         days_predicted    = sum(1 for d in daily_dates if d.year == y and d.month == m)
-        
         if days_predicted > 0:
             # Scale to full calendar month for apples-to-apples comparison
             month_total = (month_sum / days_predicted) * days_in_month
-            logger.info(f"  [PHASE R5 AGGREGATION] month={month_cursor.strftime('%b %Y')}  days_in_month={days_in_month}  avg_daily_£=%.2f  total_£=%.2f", (month_sum / days_predicted), month_total)
         else:
             month_total = 0
         monthly_ts.append(TimeSeriesPrediction(
@@ -273,29 +260,21 @@ async def predict_sales(request_body: PredictRequest, request: Request):
             median_pred, min(preds), max(preds),
         )
 
-    # 7. Summary KPI: Weekly Average of the first month (matches user expectations)
-    month1_total = monthly_ts[0].predicted_sales if monthly_ts else 0
-    y1, m1 = monthly_ts[0].date.split() if monthly_ts else [None, None]
-    # Simple weekly average for the first month
-    _, days_in_month1 = calendar.monthrange(from_year, from_month)
-    month1_weekly_avg = (month1_total / days_in_month1) * 7.0
-
     # ── Final response ────────────────────────────────────────────────────────
     logger.info(
         "\n"
         "╔══════════════════════════════════════════════════════════╗\n"
         "║  /predict  RESPONSE SENT                                 ║\n"
         "╚══════════════════════════════════════════════════════════╝\n"
-        "  postcode=%s  predicted_weekly=£%.2f  predicted_monthly=£%.2f (Month 1)\n",
+        "  postcode=%s  predicted_sales=£%.2f (Month 1)\n",
         postcode,
-        month1_weekly_avg,
-        month1_total
+        monthly_ts[0].predicted_sales,
     )
 
     return PredictResponse(
         postcode=postcode,
         source=source_type,
-        predicted_sales=month1_weekly_avg, # Return Weekly to Dashboard Summary
+        predicted_sales=monthly_ts[0].predicted_sales,
         features=features,
         display_data=display_data,
         time_series=time_series,

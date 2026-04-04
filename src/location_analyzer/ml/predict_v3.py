@@ -20,33 +20,37 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
-# ─── Lunar Calendar & Holiday Lookup (Full 21-Year Expansion 2010-2030) ───
-HOLIDAY_MAP = {
-    2010: {"ramadan": [("2010-08-11", "2010-09-09")], "eid_fitr": ["2010-09-10"], "eid_adha": ["2010-11-16"]},
-    2011: {"ramadan": [("2011-08-01", "2011-08-30")], "eid_fitr": ["2011-08-31"], "eid_adha": ["2011-11-06"]},
-    2012: {"ramadan": [("2012-07-20", "2012-08-18")], "eid_fitr": ["2012-08-19"], "eid_adha": ["2012-10-26"]},
-    2013: {"ramadan": [("2013-07-09", "2013-08-07")], "eid_fitr": ["2013-08-08"], "eid_adha": ["2013-10-15"]},
-    2014: {"ramadan": [("2014-06-28", "2014-07-27")], "eid_fitr": ["2014-07-28"], "eid_adha": ["2014-10-04"]},
-    2015: {"ramadan": [("2015-06-18", "2015-07-16")], "eid_fitr": ["2015-07-17"], "eid_adha": ["2015-09-23"]},
-    2016: {"ramadan": [("2016-06-06", "2016-07-05")], "eid_fitr": ["2016-07-06"], "eid_adha": ["2016-09-12"]},
-    2017: {"ramadan": [("2017-05-27", "2017-06-24")], "eid_fitr": ["2017-06-25"], "eid_adha": ["2017-09-01"]},
-    2018: {"ramadan": [("2018-05-16", "2018-06-14")], "eid_fitr": ["2018-06-15"], "eid_adha": ["2018-08-21"]},
-    2019: {"ramadan": [("2019-05-05", "2019-06-03")], "eid_fitr": ["2019-06-04"], "eid_adha": ["2019-08-11"]},
-    2020: {"ramadan": [("2020-04-23", "2020-05-22")], "eid_fitr": ["2020-05-23"], "eid_adha": ["2020-07-31"]},
-    2021: {"ramadan": [("2021-04-12", "2021-05-11")], "eid_fitr": ["2021-05-12"], "eid_adha": ["2021-07-20"]},
-    2022: {"ramadan": [("2022-04-01", "2022-04-30")], "eid_fitr": ["2022-05-02"], "eid_adha": ["2022-07-09"]},
-    2023: {"ramadan": [("2023-03-22", "2023-04-20")], "eid_fitr": ["2023-04-21"], "eid_adha": ["2023-06-28"]},
-    2024: {"ramadan": [("2024-03-10", "2024-04-08")], "eid_fitr": ["2024-04-09"], "eid_adha": ["2024-06-16"]},
-    2025: {"ramadan": [("2025-02-28", "2025-03-30")], "eid_fitr": ["2025-03-31"], "eid_adha": ["2025-06-07"]},
-    2026: {"ramadan": [("2026-02-18", "2026-03-19")], "eid_fitr": ["2026-03-20"], "eid_adha": ["2026-05-26"]},
-    2027: {"ramadan": [("2027-02-08", "2027-03-09")], "eid_fitr": ["2027-03-10"], "eid_adha": ["2027-05-17"]},
-    2028: {"ramadan": [("2028-01-28", "2028-02-26")], "eid_fitr": ["2028-02-27"], "eid_adha": ["2028-05-06"]},
-    2029: {"ramadan": [("2029-01-16", "2029-02-14")], "eid_fitr": ["2029-02-15"], "eid_adha": ["2029-04-24"]},
-    2030: {
-        "ramadan": [("2030-01-05", "2030-02-03"), ("2030-12-25", "2030-12-31")], 
-        "eid_fitr": ["2030-02-04"], 
-        "eid_adha": ["2030-04-13"]
-    },
+# ─── Lunar Calendar Lookup (Full 21-Year Expansion 2010-2030) ─────────────
+RAMADAN_DATES = {
+    2010: ("2010-08-11", "2010-09-09"), 2011: ("2011-08-01", "2011-08-30"),
+    2012: ("2012-07-20", "2012-08-18"), 2013: ("2013-07-09", "2013-08-07"),
+    2014: ("2014-06-28", "2014-07-27"), 2015: ("2015-06-18", "2015-07-16"),
+    2016: ("2016-06-06", "2016-07-05"), 2017: ("2017-05-27", "2017-06-24"),
+    2018: ("2018-05-16", "2018-06-14"), 2019: ("2019-05-05", "2019-06-03"),
+    2020: ("2020-04-23", "2020-05-22"), 2021: ("2021-04-12", "2021-05-11"),
+    2022: ("2022-04-01", "2022-04-30"), 2023: ("2023-03-22", "2023-04-20"),
+    2024: ("2024-03-10", "2024-04-08"), 2025: ("2025-02-28", "2025-03-30"),
+    2026: ("2026-02-18", "2026-03-19"), 2027: ("2027-02-08", "2027-03-09"),
+    2028: ("2028-01-28", "2028-02-26"), 2029: ("2029-01-16", "2029-02-14"),
+    2030: ("2030-01-05", "2030-02-03"),
+}
+
+EID_AL_FITR_DATES = {
+    2010: "2010-09-10", 2011: "2011-08-31", 2012: "2012-08-19", 2013: "2013-08-08",
+    2014: "2014-07-28", 2015: "2015-07-17", 2016: "2016-07-06", 2017: "2017-06-25",
+    2018: "2018-06-15", 2019: "2019-06-04", 2020: "2020-05-23", 2021: "2021-05-12",
+    2022: "2022-05-02", 2023: "2023-04-21", 2024: "2024-04-09", 2025: "2025-03-31",
+    2026: "2026-03-20", 2027: "2027-03-10", 2028: "2028-02-27", 2029: "2029-02-15",
+    2030: "2030-02-04",
+}
+
+EID_AL_ADHA_DATES = {
+    2010: "2010-11-16", 2011: "2011-11-06", 2012: "2012-10-26", 2013: "2013-10-15",
+    2014: "2014-10-04", 2015: "2015-09-23", 2016: "2016-09-12", 2017: "2017-09-01",
+    2018: "2018-08-21", 2019: "2019-08-11", 2020: "2020-07-31", 2021: "2021-07-20",
+    2022: "2022-07-09", 2023: "2023-06-28", 2024: "2024-06-16", 2025: "2025-06-07",
+    2026: "2026-05-27", 2027: "2027-05-17", 2028: "2028-05-06", 2029: "2029-04-24",
+    2030: "2030-04-13",
 }
 
 
@@ -212,8 +216,8 @@ class V3PredictionService:
             except Exception:
                 row["Days_Since_Open"] = base_days
         else:
-            # Fallback: use raw_features if provided, otherwise default to 1000 (Mature Site)
-            row["Days_Since_Open"] = raw_features.get("Days_Since_Open", 1000)
+            # Fallback: use raw_features if provided, otherwise default to 0
+            row["Days_Since_Open"] = raw_features.get("Days_Since_Open", 0)
 
         # ── Temporal Features (from prediction date) ──────────────────
         row["Year"] = pred_date.year
@@ -231,34 +235,32 @@ class V3PredictionService:
         row["is_NYE"] = 1 if (pred_date.month == 12 and pred_date.day == 31) else 0
         row["is_NYD"] = 1 if (pred_date.month == 1 and pred_date.day == 1) else 0
 
-        # ── Historical-Only Flags (UK COVID Lockdowns 2020-2021) ────────
-        is_lockdown = 0
-        from datetime import date as d_obj
-        if (d_obj(2020, 3, 23) <= pred_date <= d_obj(2020, 7, 4)) or \
-           (d_obj(2020, 11, 5) <= pred_date <= d_obj(2020, 12, 2)) or \
-           (d_obj(2021, 1, 4) <= pred_date <= d_obj(2021, 7, 19)):
-            is_lockdown = 1
-        row["is_covid_lockdown"] = is_lockdown
+        # ── Historical-Only Flags (always 0 for future predictions) ───
+        row["is_covid_lockdown"] = 0
         row["is_logistics_strike"] = 0
         row["is_delivery_crackdown"] = 0
 
-        # ── Lunar Calendar Flags (Loop based) ─────────────────────────
+        # ── Lunar Calendar Flags ──────────────────────────────────────
+        year = pred_date.year
         row["is_ramadan"] = 0
         row["is_eid_al_fitr"] = 0
         row["is_eid_al_adha"] = 0
 
-        if year in HOLIDAY_MAP:
-            h = HOLIDAY_MAP[year]
-            for r_start_s, r_end_s in h.get("ramadan", []):
-                if pd.to_datetime(r_start_s).date() <= pred_date <= pd.to_datetime(r_end_s).date():
-                    row["is_ramadan"] = 1
-                    break
-            for e_date in h.get("eid_fitr", []):
-                if pred_date == pd.to_datetime(e_date).date():
-                    row["is_eid_al_fitr"] = 1
-            for e_date in h.get("eid_adha", []):
-                if pred_date == pd.to_datetime(e_date).date():
-                    row["is_eid_al_adha"] = 1
+        if year in RAMADAN_DATES:
+            ram_start = pd.to_datetime(RAMADAN_DATES[year][0]).date()
+            ram_end = pd.to_datetime(RAMADAN_DATES[year][1]).date()
+            if ram_start <= pred_date <= ram_end:
+                row["is_ramadan"] = 1
+
+        if year in EID_AL_FITR_DATES:
+            eid_f = pd.to_datetime(EID_AL_FITR_DATES[year]).date()
+            if pred_date == eid_f:
+                row["is_eid_al_fitr"] = 1
+
+        if year in EID_AL_ADHA_DATES:
+            eid_a = pd.to_datetime(EID_AL_ADHA_DATES[year]).date()
+            if pred_date == eid_a:
+                row["is_eid_al_adha"] = 1
 
         # ── Ensure all expected features exist (fill missing with NaN) ─
         for feat in expected:

@@ -116,9 +116,6 @@ class V4EnsembleModel(BaseEstimator, RegressorMixin):
                         applied_weights.append(weight)
                     except:
                         pass
-            
-            if len(preds) > 0:
-                logger.debug(f"  [MODEL %s] raw_pred_log=%.4f (weight=%.2f)", key, preds[-1]/weight, weight)
 
         if not preds:
             raise ValueError("All sub-models failed to predict. Check input feature consistency and shape.")
@@ -188,10 +185,7 @@ class PredictionService:
         # 1. Direct Lookup
         row = self.cpi_df[(self.cpi_df["Year"] == year) & (self.cpi_df["Month"] == month)]
         if not row.empty:
-            target_cpi = float(row["CPI_D7EW"].iloc[0])
-            multiplier = target_cpi / self.base_cpi
-            logger.info(f"  [CPI LOOKUP] target={year}-{month}  target_cpi={target_cpi}  base_cpi={self.base_cpi}  multiplier=%.4f", multiplier)
-            return multiplier
+            return float(row["CPI_D7EW"].iloc[0]) / self.base_cpi
 
         # 2. Extrapolation (Future) or Clipping (Deep Past)
         last_row = self.cpi_df.iloc[-1]
@@ -219,9 +213,7 @@ class PredictionService:
             monthly_rate = (1 + 0.025) ** (1/12) - 1 # Fallback 2.5% annual
 
         extrapolated_cpi = last_cpi * ((1 + monthly_rate) ** months_diff)
-        multiplier = extrapolated_cpi / self.base_cpi
-        logger.info(f"  [CPI EXTRAPOLATION] target={year}-{month}  extrapolated_cpi=%.2f  multiplier=%.4f", extrapolated_cpi, multiplier)
-        return multiplier
+        return extrapolated_cpi / self.base_cpi
 
     def _align_features(self, df_raw: pd.DataFrame) -> pd.DataFrame:
         """
@@ -295,12 +287,6 @@ class PredictionService:
 
         try:
             df_raw = pd.DataFrame(raw_data)
-            
-            # Log first sample features for visibility
-            if not df_raw.empty:
-                first_sample = df_raw.iloc[0].to_dict()
-                logger.info(f"  [ML INPUT SAMPLE] %s", json.dumps(first_sample, indent=2))
-            
             df_aligned = self._align_features(df_raw)
 
             # 2. Preprocess: Result is a DataFrame with 'cat__', 'num__', 'pass__' prefixes
@@ -331,12 +317,8 @@ class PredictionService:
                 m = day_data.get("Month", day_data.get("month", 1))
                 
                 multiplier = self._get_cpi_multiplier(int(y), int(m))
-                if i == 0:
-                    logger.info(f"  [NOMINAL CALIBRATION] month=1  y={y}  m={m}  multiplier=%.4f", multiplier)
-                
                 nominal_sales.append(float(p_base * multiplier))
 
-            logger.info("  [ML OUTPUT] Predicted Sales (Month 1): £%.2f", nominal_sales[0])
             return nominal_sales
 
         except Exception as e:
