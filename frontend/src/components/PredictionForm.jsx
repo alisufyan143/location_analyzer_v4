@@ -166,7 +166,7 @@ export default function PredictionForm({ onPredict, isLoading }) {
                     </>
                 )}
             </button>
-            
+
             <div className="glass-card" style={{ marginTop: '1.25rem', padding: '1rem' }}>
                 <h3 style={{ fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>
                     <Info size={16} />
