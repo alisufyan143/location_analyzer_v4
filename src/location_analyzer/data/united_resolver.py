@@ -22,22 +22,23 @@ from location_analyzer.data.scotland_resolver import ScotlandResolver
 
 logger = logging.getLogger(__name__)
 
-# NaPTAN stop_type → human-readable type (matching CrystalRoof/training data)
+# NaPTAN stop_type → human-readable type (strictly matching V3/V4 TargetEncoder)
+# Model Expects: 'Rail', 'Underground Station', 'Train Station', 'Mixed', 'Bus Station'
 STOP_TYPE_MAP = {
-    "BCT": "Bus",         # Bus/Coach/Tram stop
-    "BCS": "Bus",         # Bus/Coach stop
-    "BCE": "Bus",         # Bus/Coach entrance
-    "BST": "Bus",         # Bus stop
-    "PLT": "Underground", # Platform (Tube/Metro)
-    "MET": "Underground", # Metro/Tram
-    "RLY": "Rail",        # Railway station
-    "RSE": "Rail",        # Railway station entrance
-    "FER": "Ferry",       # Ferry terminal
-    "FBT": "Ferry",       # Ferry berth
-    "AIR": "Air",         # Airport
-    "GAT": "Air",         # Airport gate
-    "TMU": "Tram",        # Tram/Metro/Underground
-    "TXR": "Taxi",        # Taxi rank
+    "BCT": "Bus Station",         # Bus/Coach/Tram stop
+    "BCS": "Bus Station",         # Bus/Coach stop
+    "BCE": "Bus Station",         # Bus/Coach entrance
+    "BST": "Bus Station",         # Bus stop
+    "PLT": "Underground Station", # Platform (Tube/Metro)
+    "MET": "Underground Station", # Metro/Tram
+    "RLY": "Train Station",       # Railway station
+    "RSE": "Train Station",       # Railway station entrance
+    "FER": "Mixed",               # Ferry terminal -> Map to Mixed
+    "FBT": "Mixed",               # Ferry berth -> Map to Mixed
+    "AIR": "Mixed",               # Airport -> Map to Mixed
+    "GAT": "Mixed",               # Airport gate -> Map to Mixed
+    "TMU": "Underground Station", # Tram/Metro/Underground
+    "TXR": "Mixed",               # Taxi rank -> Map to Mixed
 }
 
 

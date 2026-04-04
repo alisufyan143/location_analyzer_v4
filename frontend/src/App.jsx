@@ -12,7 +12,7 @@ function App() {
   const [requestComplete, setRequestComplete] = useState(false) // backend finished; show 100% then hide
   const [error, setError] = useState(null)
   const [result, setResult] = useState(null)
-  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+  const apiBase = import.meta.env.VITE_API_BASE_URL || '';
 
   const handlePredict = async (postcode, branchName = "", dateRange = {}) => {
     if (!postcode.trim()) {

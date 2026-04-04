@@ -168,7 +168,7 @@ async def predict_sales(request_body: PredictRequest, request: Request):
         
         # Inject Contextual Metadata
         f_day["Inferred_Brand"] = inferred_brand
-        f_day["Days_Since_Open"] = request_body.days_since_open
+        f_day["Days_Since_Open"] = request_body.days_since_open if request_body.days_since_open else 730
         
         pred_features.append(f_day)
 

@@ -21,7 +21,7 @@ class PredictRequest(BaseModel):
     is_logistics_strike: bool = Field(False, description="Simulate a logistics/supply chain strike.")
     is_delivery_crackdown: bool = Field(False, description="Simulate a local delivery/parking crackdown.")
     inferred_brand_override: Optional[str] = Field(None, description="Manually set the brand (Galos, Grill Peri Peri, Grillo, Jojo's, Maeme's, Pepe's, Rio's). If None, it is inferred from branch_name.")
-    days_since_open: Optional[int] = Field(1000, description="Days the location has been open. Defaults to 1000 (Mature site).")
+    days_since_open: Optional[int] = Field(730, description="Days the location has been open. Defaults to 730 (Mature site).")
 
 class GranularTimeSeries(BaseModel):
     """Daily, Weekly, and Monthly 12-month projections."""

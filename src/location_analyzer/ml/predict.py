@@ -6,6 +6,7 @@ import logging
 import json
 import sys
 import sklearn
+from location_analyzer.utils.brand_matcher import BrandMatcher
 from typing import Dict, Any, List, Optional
 from sklearn.base import BaseEstimator, RegressorMixin
 from pytorch_tabnet.tab_model import TabNetRegressor
@@ -40,37 +41,48 @@ class V4EnsembleModel(BaseEstimator, RegressorMixin):
                 self.weights = {"lgb": 0.4, "rf": 0.2, "et": 0.2, "tabnet": 0.2}
                 logger.warning(f"Weights file {weight_path} not found. Using defaults.")
 
-            # 2. Load Scikit-Learn / LightGBM models
+            # 2. Load Scikit-Learn / Boosting models
             model_files = {
                 "lgb": "prod_lgb_model.joblib",
                 "rf": "prod_rf_model.joblib",
-                "et": "prod_et_model.joblib"
+                "et": "prod_et_model.joblib",
+                "xgb": "prod_xgb_model.joblib",
+                "cat": "prod_cat_model.joblib"
             }
             for key, filename in model_files.items():
                 path = os.path.join(self.model_dir, filename)
-                if os.path.exists(path):
-                    self.models[key] = joblib.load(path)
-                    logger.info(f"Loaded {key} model.")
+                # Strict floating-point pruning threshold (0.5%)
+                weight_val = self.weights.get(f"{key}_weight", 0.0)
+                
+                if weight_val >= 0.005:
+                    if os.path.exists(path):
+                        self.models[key] = joblib.load(path)
+                        logger.info(f"Loaded {key} model (Weight: {weight_val:.4f}).")
+                    else:
+                        logger.error(f"Missing essential model: {path} (Weight {weight_val:.4f})")
                 else:
-                    logger.error(f"Missing essential model: {path}")
+                    logger.info(f"Skipped {key} model (Pruned by Meta-Ensemble, Weight: {weight_val:.4f} < 0.005)")
 
             # 3. Load TabNet (Special Zip Loader)
-            tabnet_path = os.path.join(self.model_dir, "prod_tabnet_model.zip")
-            if os.path.exists(tabnet_path):
-                # TabNetRegressor.load_model expects the path without .zip or handles the zip
-                self.models["tabnet"] = TabNetRegressor()
-                self.models["tabnet"].load_model(tabnet_path)
-                logger.info("Loaded TabNet model.")
+            tabnet_weight = self.weights.get("tabnet_weight", 0.0)
+            if tabnet_weight >= 0.005:
+                tabnet_path = os.path.join(self.model_dir, "prod_tabnet_model.zip")
+                if os.path.exists(tabnet_path):
+                    self.models["tabnet"] = TabNetRegressor()
+                    self.models["tabnet"].load_model(tabnet_path)
+                    logger.info(f"Loaded TabNet model (Weight: {tabnet_weight:.4f}).")
+                else:
+                    logger.error(f"Missing essential model: {tabnet_path}")
             else:
-                logger.warning(f"TabNet model not found at {tabnet_path}. Ensemble will proceed without it.")
+                logger.info(f"Skipped TabNet model (Pruned by Meta-Ensemble, Weight: {tabnet_weight:.4f} < 0.005)")
 
         except Exception as e:
             logger.error(f"Failed to initialize V4 Ensemble: {e}")
             raise RuntimeError(f"V4 Ensemble Initialization Error: {e}")
 
-    def predict(self, X: np.ndarray) -> np.ndarray:
-        """Weighted average of sub-model predictions."""
-        preds = []
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """Weighted average of sub-model predictions (Real £ Space)."""
+        preds_real = []
         applied_weights = []
 
         try:
@@ -80,7 +92,6 @@ class V4EnsembleModel(BaseEstimator, RegressorMixin):
             raise
 
         for key, model in self.models.items():
-            # Match keys like 'lgb_weight' from the JSON
             weight_key = f"{key}_weight"
             weight = self.weights.get(weight_key, 0.0)
             
@@ -89,39 +100,25 @@ class V4EnsembleModel(BaseEstimator, RegressorMixin):
 
             try:
                 if key == "tabnet":
-                    # TabNet strictly requires numpy arrays (not DataFrames)
-                    # Use values from the processed DataFrame
                     X_array = X.values if hasattr(X, "values") else X
-                    # Casting to float32 is already done at the top of predict() if X was numeric
-                    # but if X is the DataFrame, we cast here.
                     X_numeric_tabnet = X_array.astype(np.float32)
-                    p = model.predict(X_numeric_tabnet).flatten()
+                    log_p = model.predict(X_numeric_tabnet).flatten()
                 else:
-                    # LGBM, RF, and ET prefer DataFrames with the prefixed names
-                    p = model.predict(X)
+                    log_p = model.predict(X)
                 
-                preds.append(p * weight)
+                # REVERSE LOG TRANSFORMATION PER MODEL (Critical Fix)
+                real_p = np.expm1(log_p)
+                preds_real.append(real_p * weight)
                 applied_weights.append(weight)
                 
             except Exception as e:
-                # TabNet often fails on CUDA indices if input distributions shift
-                # We log it but allow the ensemble to continue with other strong models (LGBM, RF, ET)
-                # to satisfy production reliability without crashing.
                 logger.error(f"Ensemble sub-model '{key}' prediction failed: {e}")
-                # Fallback prediction logic for tree models 
-                if key != "tabnet" and hasattr(model, 'booster_'):
-                    try:
-                        p = model.booster_.predict(X_numeric)
-                        preds.append(p * weight)
-                        applied_weights.append(weight)
-                    except:
-                        pass
 
-        if not preds:
-            raise ValueError("All sub-models failed to predict. Check input feature consistency and shape.")
+        if not preds_real:
+            raise ValueError("All sub-models failed to predict.")
 
         total_weight = sum(applied_weights)
-        return sum(preds) / total_weight
+        return sum(preds_real) / total_weight
 
 # Inject into __main__ for joblib compatibility if needed (though we load separately)
 sys.modules['__main__'].V4EnsembleModel = V4EnsembleModel
@@ -221,15 +218,14 @@ class PredictionService:
         with the correct names and case-sensitivity.
         """
         # Groupings as per training notebook 'preprocessor' define the internal order
-        self.cat_features = ['Nearest_Station_Type', 'Inferred_Brand']
+        self.cat_features = ['Nearest_Station_Type', 'Inferred_Brand', 'Month', 'DayOfMonth', 'DayOfWeek']
         
         self.num_features = [
             'avg_household_income', 'unemployment_rate', 'Distance_to_Nearest_Station', 
             'Transport_Accessibility_Score', 'percent_muslim', 'Days_Since_Open', 
             'rateable_value', 'distance_to_nearest_station_mi', 
             'distance_to_mcdonalds_kfc_mi', 'distance_to_mosque_mi', 'distance_to_university_mi', 
-            'workplace_to_resident_ratio', 'ethnic_diversity_index', 'Month', 
-            'DayOfMonth', 'DayOfWeek'
+            'workplace_to_resident_ratio', 'ethnic_diversity_index'
         ]
         
         self.pass_features = [
@@ -262,14 +258,16 @@ class PredictionService:
         df = df_raw.copy()
 
         # Handle Branch Name -> Inferred_Brand mapping
-        # In this V4 implementation, we expect the pipeline/resolver to have already
-        # mapped the string 'McDonalds' to the correct ID (1-7) or 0/Generic.
-        if 'Inferred_Brand' not in df.columns and 'branch_name' in df.columns:
-            # Placeholder: will be replaced by brand_matcher logic in the pipeline
-            df['Inferred_Brand'] = 0 
+        if 'Inferred_Brand' not in df.columns or df['Inferred_Brand'].isnull().any():
+            branch_name = df['branch_name'].iloc[0] if 'branch_name' in df.columns else ""
+            df['Inferred_Brand'] = BrandMatcher.get_brand_id(branch_name)
+
+        # Force Categorical types for TargetEncoder (Fixes 'Sawtooth' glitch)
+        for col in self.cat_features:
+            df[col] = df[col].astype(str)
             
         if 'Days_Since_Open' not in df.columns:
-            df['Days_Since_Open'] = 1000.0 # Standard mature site default
+            df['Days_Since_Open'] = 730 # Standard mature site default (2+ years)
 
         # Re-index to TRAINING sequence to satisfy ColumnTransformer's internal slicing
         return df[training_order]
@@ -298,11 +296,8 @@ class PredictionService:
             # 4. Sanitize: NaNs caused by resolver-training gaps can crash TabNet/Ensemble
             X_df = X_df.fillna(0)
 
-            # 5. Predict: Pass the named DataFrame to the ensemble
-            log_preds = self.ensemble.predict(X_df)
-
-            # 6. Convert to actual £ sales (Log -> Nominal)
-            sales_preds_base = np.expm1(log_preds)
+            # 5. Predict: Pass the named DataFrame to the ensemble (Returns Real £)
+            sales_preds_base = self.ensemble.predict(X_df)
             sales_preds_base = np.clip(sales_preds_base, a_min=0, a_max=None)
 
             # 7. Apply CPI-Based Nominal Scaling (Back-deflation / Inflation)
