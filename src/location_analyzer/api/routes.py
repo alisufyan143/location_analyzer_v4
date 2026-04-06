@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse
 from location_analyzer.api.schemas import PredictRequest, PredictResponse, TimeSeriesPrediction, GranularTimeSeries, PlotExportRequest
 from location_analyzer.pipeline.inference_pipeline import InferencePipeline
 from location_analyzer.data.repository import PostcodeRepository
+from location_analyzer.data.models import BranchMaturity
 from location_analyzer.utils.calendar_utils import CalendarUtility
 from location_analyzer.utils.brand_matcher import BrandMatcher
 
@@ -157,7 +158,26 @@ async def predict_sales(request_body: PredictRequest, request: Request):
         "is_delivery_crackdown": int(request_body.is_delivery_crackdown)
     }
 
-    # 3. Prepare unique high-fidelity feature dicts for every single day (V4 Requirement)
+    # --- FETCH DYNAMIC MATURITY FROM DB ---
+    # Default is the incoming request (or 1000 standard).
+    base_days_since_open = request_body.days_since_open if request_body.days_since_open is not None else 1000
+    anchor_date = None
+    
+    if session_factory and request_body.branch_name:
+        with session_factory() as session:
+            b_name_strip = request_body.branch_name.strip()
+            maturity_record = session.query(BranchMaturity).filter_by(
+                branch_name=b_name_strip, 
+                postcode=postcode
+            ).first()
+            if maturity_record:
+                base_days_since_open = maturity_record.base_days_since_open
+                anchor_date = maturity_record.last_known_date
+                logger.info("  [MATURITY] DB Anchor Hit: %d days as of %s", base_days_since_open, anchor_date.strftime('%Y-%m-%d'))
+            else:
+                logger.info("  [MATURITY] DB Anchor Miss: Defaulting base to %d days", base_days_since_open)
+
+    # 3. Prepare unique high-fidelity feature dicts for every single day
     pred_features = []
     for d in daily_dates:
         f_day = features.copy()
@@ -166,9 +186,17 @@ async def predict_sales(request_body: PredictRequest, request: Request):
         temporal_flags = CalendarUtility.get_features_for_date(d, situational)
         f_day.update(temporal_flags)
         
+        # --- ROLLING TIME-SERIES MATURITY ---
+        if anchor_date:
+            delta_days = (d - anchor_date).days
+            rolling_maturity = max(0, base_days_since_open + delta_days)
+        else:
+            delta_days = (d - range_start).days
+            rolling_maturity = max(0, base_days_since_open + delta_days)
+
         # Inject Contextual Metadata
         f_day["Inferred_Brand"] = inferred_brand
-        f_day["Days_Since_Open"] = request_body.days_since_open if request_body.days_since_open else 730
+        f_day["Days_Since_Open"] = rolling_maturity
         
         pred_features.append(f_day)
 
@@ -241,25 +269,10 @@ async def predict_sales(request_body: PredictRequest, request: Request):
         "\n".join(f"    {ts.date}: £{ts.predicted_sales:>10,.2f}" for ts in monthly_ts),
     )
 
-    # ── Phase R6: Persist Prediction to DB ───────────────────────────────────
-    if session_factory and monthly_ts:
-        _log_phase("R6", "Persist Prediction to DB", f"postcode={postcode}")
-        median_pred = monthly_ts[0].predicted_sales
-        preds = [t.predicted_sales for t in monthly_ts]
-        with session_factory() as session:
-            repo = PostcodeRepository(session)
-            repo.upsert_postcode(
-                postcode,
-                prediction=median_pred,
-                min_prediction=min(preds) if preds else None,
-                max_prediction=max(preds) if preds else None,
-            )
-            session.commit()
-        logger.info(
-            "  [PHASE R6] Prediction stored: first_month=£%.2f  min=£%.2f  max=£%.2f",
-            median_pred, min(preds), max(preds),
-        )
-
+    # ── Phase R6: Stripped (Prediction Caching removed) ─────────────────────
+    # We no longer cache static predictions into SQLite. It caused stale data 
+    # bugs. High-speed RAM inference executes in ~45ms dynamically every click.
+    
     # ── Final response ────────────────────────────────────────────────────────
     logger.info(
         "\n"

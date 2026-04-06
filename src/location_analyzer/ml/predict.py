@@ -174,43 +174,10 @@ class PredictionService:
     def _get_cpi_multiplier(self, year: int, month: int) -> float:
         """
         Calculates the (target_cpi / base_cpi_2024) multiplier.
-        Includes rolling extrapolation for dates beyond the known CPI dataset (pre-2026).
+        (CPI adjustment has been completely disabled at user request. 
+        All predictions are now output in static 2024 price levels).
         """
-        if self.cpi_df is None:
-            return 1.0  # Fallback: No scaling
-
-        # 1. Direct Lookup
-        row = self.cpi_df[(self.cpi_df["Year"] == year) & (self.cpi_df["Month"] == month)]
-        if not row.empty:
-            return float(row["CPI_D7EW"].iloc[0]) / self.base_cpi
-
-        # 2. Extrapolation (Future) or Clipping (Deep Past)
-        last_row = self.cpi_df.iloc[-1]
-        last_year = int(last_row["Year"])
-        last_month = int(last_row["Month"])
-        last_cpi = float(last_row["CPI_D7EW"])
-
-        # Calculate months difference
-        months_diff = (year - last_year) * 12 + (month - last_month)
-
-        if months_diff <= 0:
-            # We are in the past relative to the dataset end, but didn't find the specific year/month
-            # This happens if querying pre-1988 (unlikely) or if there are gaps.
-            # Clip to the oldest available if before range, or use last available if between points.
-            return last_cpi / self.base_cpi
-
-        # Rolling Extrapolation Logic:
-        # Calculate trailing 12-month annual inflation rate
-        recent_12 = self.cpi_df.tail(12)
-        if len(recent_12) >= 12:
-            annual_rate = (recent_12["CPI_D7EW"].iloc[-1] / recent_12["CPI_D7EW"].iloc[0]) - 1
-            # Multiplier per month (Geometric mean)
-            monthly_rate = (1 + annual_rate) ** (1/12) - 1
-        else:
-            monthly_rate = (1 + 0.025) ** (1/12) - 1 # Fallback 2.5% annual
-
-        extrapolated_cpi = last_cpi * ((1 + monthly_rate) ** months_diff)
-        return extrapolated_cpi / self.base_cpi
+        return 1.0
 
     def _align_features(self, df_raw: pd.DataFrame) -> pd.DataFrame:
         """

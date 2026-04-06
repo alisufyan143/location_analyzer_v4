@@ -1,139 +1,94 @@
-# 📍 Location Analyzer v3: Enterprise Edition
+# 📍 Location Analyzer v4: Enterprise Edition
 
-> **The next generation of high-fidelity UK retail sales forecasting.**
-> Powered by a triple-engine Meta-Ensemble (XGBoost + ExtraTrees + PyTorch TabNet), real ONS CPI inflation data, and resilient CUDA-accelerated inference.
-
----
-
-## 🚀 Overview
-
-**Location Analyzer v3** is a state-of-the-art predictive engine designed to determine the exact commercial viability of UK retail locations. It transforms raw postcodes into detailed 12-month revenue forecasts by orchestrating a 100% offline, heavily engineered machine learning pipeline.
-
-### Core v3 Innovations
-*   **⚡ 100% Offline Architecture (Zero Scraper)**: Decommissioned all legacy web scrapers. All demographics, amenities, and occupation data are now resolved instantly (<30ms) from a 2.4GB local UK Master DB.
-*   **🧠 Triple-Engine Meta-Ensemble**: Combines **XGBoost** (Interactions), **ExtraTrees** (Stability), and **PyTorch TabNet** (Attention-based Neural Net) for >90% prediction accuracy.
-*   **🏴󠁧󠁢󠁳󠁣󠁴󠁿 Scotland Localized Intelligence**: Full support for Scottish postcodes using **SIMD 2020v2**, **Census 2022**, and **SSPL 2026/1** for 100% accurate demographic resolution.
-*   **💷 Real ONS CPI Inflation**: Unlike static models, v3 uses official **ONS D7EW Restaurant CPI** data to reverse-inflate forecasts into real-world nominal £ values for 2025–2027.
-*   **🛡️ TabNet Safety Clamp**: Proactive protection against CUDA out-of-bounds crashes. Every input is forcefully clipped to training boundaries before inference.
-*   **🌙 Cultural Intelligence**: Automatic detection of **Ramadan and Eid** calendar shifts (2025–2028) to account for religious spending cycles.
-*   **📍 Zero-Network Geocoding**: Latitude and longitude are resolved locally via an offline ONSPD-based index, ensuring 100% privacy and reliability.
-*   **📱 Fully Responsive**: Optimized glassmorphic dashboard that works perfectly on Desktop, Tablet, and Mobile.
+> **The next generation of high-fidelity UK commercial real estate & QSR sales forecasting.**  
+> Powered by a SciPy-Optimized Meta-Ensemble (TabNet + ExtraTrees + CatBoost), dynamic time-series maturity logic, and 100% live RAM inference.
 
 ---
 
-## 🛠️ Architecture
+## 🚀 The V4 Innovations
 
-The v3 architecture is optimized for high-performance inference and data-science reproducibility.
+**Location Analyzer v4** is a state-of-the-art predictive engine designed to determine the exact commercial viability, street physics, and revenue trajectory of UK retail locations. It transforms raw postcodes into detailed, month-by-month revenue forecasts.
+
+### 🌟 What's New in V4?
+*   **🧠 SciPy Pruned Meta-Ensemble**: The V4 mathematical core was subjected to Monte-Carlo Meta-Ensemble pruning. It officially runs on a high-efficiency blend of **ExtraTrees (47%)**, **PyTorch TabNet (46%)**, and **CatBoost (6%)**. Redundant tree-models (Random Forest, XGBoost) are aggressively memory-pruned at boot.
+*   **⏱️ Dynamic Time-Series Maturity**: Upgraded the machine learning from static snapshots to **true rolling maturity**. The API tracks a physical branch's age (`Days_Since_Open`) and dynamically increments it month-over-month across a 2-year forecast, giving you an exact mathematical growth curve. New queries dynamically default to **Stabilized Year-3 (1000 days)**.
+*   **⚡ Live RAM Inference (Cache Stripped)**: We ripped out stale SQLite prediction caching. Since our ONNX/Joblib neural networks execute in ~45ms, all multi-year forecasting is generated live, dynamically, directly in system RAM.
+*   **📅 Categorical Date Forcing**: Solved the geographical "Sawtooth" bug by forcing temporal dimensions (`Month`, `DayOfWeek`) into pure strings, locking the preprocessor into treating dates as contexts rather than continuous floats.
+*   **🏴󠁧󠁢󠁳󠁣󠁴󠁿 Scottish & UK Regional Engine**: Uses robust regional feature aggregators (`rateable_value`, `ethnic_diversity_index`, `distance_to_station_mi`) parsed directly by a hyper-tuned `CategoryEncoder`.
+
+---
+
+## 🛠️ Architecture Overview
+
+The V4 architecture separates UI state from geometric math processing, optimizing strictly for speed and data-science reproducibility.
 
 ```text
 Location-Analyzer-Prediction/
 ├── frontend/                     # ⚛️ React Dashboard (Vite + Recharts)
-├── models/v3/                    # 🏋️‍♂️ V3 Artifacts (XGB, ET, TabNet, Preprocessor, Bounds)
-├── scripts/                      # 🛠️ Utility Suite
-│   ├── run_v3_pipeline.py        # CLI Interactive Prediction Tool
-│   ├── test_v3_api.py            # Integration & Stability Test Suite
-│   └── cpi_stage_*.py            # ONS CPI Ingestion & Verification
+│   ├── src/App.jsx               # Main SPA (Ngrok/Proxy agnostic URL routing)
+│   └── vite.config.js            # Internal Reverse Proxy Router
+├── models/production/            # 🏋️‍♂️ V4 Final Assets (CatBoost, TabNet.zip, ExtraTrees, Preprocessor)
 ├── src/location_analyzer/
-│   ├── api/                      # ⚡ FastAPI Service Layer
-│   ├── ml/                       # 🧠 V3 Inference Engine (predict_v3.py)
-│   ├── pipeline/                 # ⚙️ 100% Offline Orchestration (Zero Scraper)
-│   ├── data/                     # 🏴󠁧󠁢󠁳󠁣󠁴󠁿 Localized Regional Engines & Spatial Logic
-│   └── scrapers/                 # 🕸️ [DECOMMISSIONED] Legacy Scrapers
-└── data/uk_data/                 # 📂 Master Data Backbone (2.4GB SQLite + PBF)
-    └── uk_master.db              # 🇬🇧 Unified ONSPD + Census + OSM Amenities
+│   ├── api/                      # ⚡ FastAPI Service Layer (routes.py)
+│   ├── ml/                       # 🧠 V4 Live Inference Engine (predict.py)
+│   ├── data/                     # 🗄️ SQLAlchemy ORM (models.py) & Ingestion Logic 
+│   ├── pipeline/                 # ⚙️ Real-time feature assembly and geo-scraping
+│   └── config.py                 # Configuration Matrix (points to models/production)
+└── data/uk_data/                 # 📂 Master Data Backbone
+    └── uk_master.db              # 🇬🇧 Unified SQlite (Spatial cache & Base Maturity Anchors)
 ```
 
 ---
 
-## 🏁 Quick Start
+## 🏁 Quick Start Guide
 
 ### 1. Environment Setup
-The v3 pipeline requires the `location_analyzer_v3` environment for PyTorch/CUDA support.
+The V4 pipeline strictly requires the `location_analyzer_v3` conda environment for PyTorch & CUDA hardware acceleration.
 ```bash
 conda activate location_analyzer_v3
 ```
 
-### 2. Start the FastAPI Backend
+### 2. Boot the Edge Intelligence (FastAPI Backend)
 ```bash
-# From root
-python -m uvicorn src.location_analyzer.api.main:app --host 127.0.0.1 --port 8000
+# Execute from the root directory
+python -m uvicorn src.location_analyzer.api.main:app --host 127.0.0.1 --port 8000 --reload
 ```
-*V3 Diagnostic Injection will log model shapes and TabNet dimensions to the console on every request.*
+*V4 diagnostic routines will instantly print meta-ensemble pruning stats and TabNet shapes to your terminal.*
 
-### 3. Start the React Frontend
+### 3. Launch the Vite Dashboard (Frontend)
 ```bash
+# Execute in a discrete terminal
 cd frontend
 npm run dev -- --host
 ```
 
-### 4. Remote Tunneling (Optional)
-To share the dashboard with external users (e.g., via ngrok):
+### 4. Remote Tunneling (Global UI Access)
+V4 has been perfectly optimized for reverse-proxy tunneling. The React code utilizes relative backend pathways `/predict` to securely hit the Vite router. You can easily broadcast the platform to an external phone or remote laptop via Ngrok:
 ```bash
-# Ensure the backend and frontend are running, then tunnel port 5173
-# The Vite proxy handles routing API requests to port 8000
+# Forward the Vite Network port 
 ngrok http 5173
 ```
-
-### 4. CLI Multi-Month Forecast
-Run a full prediction suite directly from your terminal:
-```bash
-python scripts/run_v3_pipeline.py
-```
+*Access the resulting `https://...ngrok-free.dev` link anywhere in the world.*
 
 ---
 
-## 📈 The V3 Inference Pipeline
+## 📈 The V4 Inference Pipeline Execution Path
 
-The `predict_v3.py` engine follows a strict 7-step execution flow:
-1.  **Offline Resolution**: Resolves all features instantly from `uk_master.db` (ONS/NISRA/OSM).
-2.  **Zero-Network Geocoding**: Resolves coordinates via local ONSPD index.
-3.  **Feature Assembly**: Injects Inferred_Brand, Days_Since_Open, and 5 temporal flags.
-4.  **Transformation**: Unified `ColumnTransformer` (TargetEnc, Quantile, Yeo-Johnson).
-5.  **Safety Clamp**: Features clipped to training min/max from `tabnet_bounds.json`.
-6.  **Ensemble Predict**: Blended result from XGB (42%), ET (33%), and TabNet (25%).
-7.  **CPI Inflation**: Forecast adjusted using official ONS monthly indices.
-
----
-
-## 🧪 Verification & Stability
-
-The system includes a dedicated V3 stability suite to ensure CUDA and data integrity.
-
-*   **API Integration**: `python scripts/test_v3_api.py`
-*   **TabNet Stress Test**: `python tmp/test_tabnet_safety.py` (Tests 5M population OOD cases)
-*   **Smoke Test**: `python tmp/test_v3_smoke.py`
+Whenever a user executes a prediction trace on the frontend, the `PredictionService` handles it in a rigid, 6-phase runtime:
+1.  **R1 (Spatial Cache Lookup)**: Checks SQLite if the Postcode's physical geometry and Demographics have been previously analyzed (Saves API limits).
+2.  **R2 (Live Scrape)**: If brand new, dynamically maps distance to Train Stations, Mosques, and Fast Food Competitors using `united_resolver`.
+3.  **R3 (Dynamic Base Maturity)**: Queries `BranchMaturity` tables. Identifies if the branch already exists and sets its exact operational age baseline.
+4.  **R4 (Feature Assembly & Time Generation)**: Rolls a 12/24-month physical calendar forward, geometrically incrementing `Days_Since_Open` against each new date string.
+5.  **R5 (Meta-Ensemble Blend)**: Feeds the feature array through the V4 preprocessor. Applies the exact SciPy float weights (e.g. `TabNet` x `0.46`). Reverses logarithmic boundaries (`np.expm1`).
+6.  **R6 (Response Serialization)**: Granularizes results into Daily, Weekly, and Monthly arrays back to React.
 
 ---
 
-## 🛡️ Requirements
-- **OS**: Windows (optimized for RTX series GPUs)
+## 🛡️ Minimum Hardware Requirements
+- **OS**: Windows (Native optimized)
 - **Runtime**: Python 3.11+ / Node.js 18+
-- **Hardware**: NVIDIA GPU (8GB+ VRAM recommended for TabNet)
-- **Data Backbone**: UK Master DB (ONSPD 2024, Census 2021, NISRA, SIMD v2, OSM)
+- **Hardware**: NVIDIA GPU (CUDA 11/12+). 8GB+ VRAM heavily recommended for uninterrupted Batched PyTorch inference.
+- **Cache**: 3GB+ local storage required for the SQLite / Geometric datasets.
 
 ---
-
-## 🏴󠁧󠁢󠁳󠁣󠁴󠁿 Scottish Regional Engine
-The v3 pipeline includes a dedicated localized engine for Scotland that bypasses standard scrapers to use official high-fidelity datasets:
-- **SSPL 2026/1**: Precise postcode-to-datazone mapping.
-- **SIMD 2020v2**: Localized economic and transport indicators.
-- **Census 2022**: Official demographic resolution for Age, Ethnicity, and Religion.
-
----
-
-## 📍 Persistence & UX
-- **Database**: SQLite with SQLAlchemy ORM.
-- **Schema**: Extended to persist `latitude` and `longitude` coordinates for every successful prediction.
-- **UX**: Automatic map centering on cached results for a seamless user experience.
-
----
-
-## 🧪 Verification & Stability
-The system includes a dedicated V3 stability suite to ensure CUDA and data integrity.
-
-- **API Integration**: `python -m pytest tests/test_api.py -v`
-- **Database Integrity**: `python -m pytest tests/test_database.py -v`
-- **Map Persistence**: `python scripts/verify_map_persistence.py` (Cleaned up after verification)
-
----
-*Developed for strategic retail intelligence.*
+*Architected and tuned for strategic QSR retail intelligence scaling.*

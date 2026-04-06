@@ -227,3 +227,23 @@ class SalesData(Base):
 
     def __repr__(self) -> str:
         return f"<SalesData(branch='{self.branch_name}', date={self.date}, sale={self.total_sale})>"
+
+
+class BranchMaturity(Base):
+    """
+    Stores the absolute maturity checkpoint for known stores.
+    Used for rolling time-series calculation during live API inference.
+    """
+    __tablename__ = "branch_maturity"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    branch_name: Mapped[str] = mapped_column(String(255), index=True)
+    postcode: Mapped[str] = mapped_column(String(10), index=True)
+    last_known_date: Mapped[datetime] = mapped_column(DateTime)
+    base_days_since_open: Mapped[int] = mapped_column(Integer)
+
+    __table_args__ = (Index("ix_maturity_branch_postcode", "branch_name", "postcode"),)
+
+    def __repr__(self) -> str:
+        return f"<BranchMaturity(branch='{self.branch_name}', base_days={self.base_days_since_open})>"
+
