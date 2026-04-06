@@ -10,6 +10,7 @@ from location_analyzer.data.repository import PostcodeRepository
 from location_analyzer.data.models import BranchMaturity
 from location_analyzer.utils.calendar_utils import CalendarUtility
 from location_analyzer.utils.brand_matcher import BrandMatcher
+from sqlalchemy import func
 
 logger = logging.getLogger(__name__)
 
@@ -158,24 +159,53 @@ async def predict_sales(request_body: PredictRequest, request: Request):
         "is_delivery_crackdown": int(request_body.is_delivery_crackdown)
     }
 
-    # --- FETCH DYNAMIC MATURITY FROM DB ---
+    # --- FETCH DYNAMIC MATURITY FROM DB (Robust Identity Match) ---
     # Default is the incoming request (or 1000 standard).
     base_days_since_open = request_body.days_since_open if request_body.days_since_open is not None else 1000
     anchor_date = None
+    apply_stimulus = False  # Track if this is a "New Location" for hardcoding/inflation
     
-    if session_factory and request_body.branch_name:
+    if session_factory:
         with session_factory() as session:
-            b_name_strip = request_body.branch_name.strip()
-            maturity_record = session.query(BranchMaturity).filter_by(
-                branch_name=b_name_strip, 
-                postcode=postcode
-            ).first()
-            if maturity_record:
-                base_days_since_open = maturity_record.base_days_since_open
-                anchor_date = maturity_record.last_known_date
-                logger.info("  [MATURITY] DB Anchor Hit: %d days as of %s", base_days_since_open, anchor_date.strftime('%Y-%m-%d'))
-            else:
-                logger.info("  [MATURITY] DB Anchor Miss: Defaulting base to %d days", base_days_since_open)
+            pc_norm = postcode.replace(" ", "").upper()
+            req_brand_id = BrandMatcher.get_brand_id(request_body.branch_name)
+            
+            # Query all branches at this postcode (Normalizing spaces in DB)
+            maturity_records = session.query(BranchMaturity).filter(
+                func.upper(func.replace(BranchMaturity.postcode, " ", "")) == pc_norm
+            ).all()
+            
+            # Find identity match via BrandMatcher
+            found_anchor = False
+            if req_brand_id != "Unknown":
+                for rec in maturity_records:
+                    db_brand_id = BrandMatcher.get_brand_id(rec.branch_name)
+                    if db_brand_id == req_brand_id:
+                        base_days_since_open = rec.base_days_since_open
+                        anchor_date = rec.last_known_date
+                        found_anchor = True
+                        logger.info("  [MATURITY] DB Anchor Hit (Brand Match): '%s' matched '%s' at %s", 
+                                    request_body.branch_name, rec.branch_name, postcode)
+                        break
+            
+            if not found_anchor:
+                # Fallback: Strict Name Match for "Unknown" brands if they exist
+                for rec in maturity_records:
+                    if rec.branch_name.strip().lower() == request_body.branch_name.strip().lower():
+                        base_days_since_open = rec.base_days_since_open
+                        anchor_date = rec.last_known_date
+                        found_anchor = True
+                        logger.info("  [MATURITY] DB Anchor Hit (Strict Name Match): '%s' at %s", 
+                                    request_body.branch_name, postcode)
+                        break
+            
+            if not found_anchor:
+                apply_stimulus = True
+                logger.info("  [MATURITY] DB Anchor Miss: Defaulting base to %d days (NEW LOCATION STIMULUS ACTIVE)", base_days_since_open)
+
+    # Apply hardcoded "Pepe's" brand weight for new/unknown locations
+    if apply_stimulus:
+        inferred_brand = "Pepe's"
 
     # 3. Prepare unique high-fidelity feature dicts for every single day
     pred_features = []
@@ -203,7 +233,13 @@ async def predict_sales(request_body: PredictRequest, request: Request):
     # 4. Batch predict all days using the V4 Ensemble
     raw_preds = model_service.predict(pred_features)
 
-    # 3.5 Apply weekly sales inflation if toggled on
+    # 3.5 Apply New Location Stimulus (Daily injection for 10k/week target)
+    if apply_stimulus:
+        STIMULUS_DAILY = 10000.0 / 7.0
+        raw_preds = [p + STIMULUS_DAILY for p in raw_preds]
+        logger.info("  [STIMULUS] Added £%.2f/day (£10,000/week) to predictions.", STIMULUS_DAILY)
+
+    # 3.6 Apply user-defined inflation if toggled on
     if request_body.inflate_sales and request_body.inflate_amount:
         WEEKLY_INFLATION = float(request_body.inflate_amount)
         DAILY_INFLATION = WEEKLY_INFLATION / 7.0
