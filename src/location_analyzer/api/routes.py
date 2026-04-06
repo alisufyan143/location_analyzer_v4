@@ -148,8 +148,7 @@ async def predict_sales(request_body: PredictRequest, request: Request):
     while curr <= range_end:
         daily_dates.append(curr)
         curr += timedelta(days=1)
-
-    # 2. Determine Brand String and situational flags
+    # 2. Determine Case-Specific Context
     inferred_brand = request_body.inferred_brand_override
     if not inferred_brand:
         inferred_brand = BrandMatcher.get_brand_id(request_body.branch_name)
@@ -160,10 +159,9 @@ async def predict_sales(request_body: PredictRequest, request: Request):
     }
 
     # --- FETCH DYNAMIC MATURITY FROM DB (Robust Identity Match) ---
-    # Default is the incoming request (or 1000 standard).
     base_days_since_open = request_body.days_since_open if request_body.days_since_open is not None else 1000
     anchor_date = None
-    apply_stimulus = False  # Track if this is a "New Location" for hardcoding/inflation
+    found_anchor = False
     
     if session_factory:
         with session_factory() as session:
@@ -176,7 +174,6 @@ async def predict_sales(request_body: PredictRequest, request: Request):
             ).all()
             
             # Find identity match via BrandMatcher
-            found_anchor = False
             if req_brand_id != "Unknown":
                 for rec in maturity_records:
                     db_brand_id = BrandMatcher.get_brand_id(rec.branch_name)
@@ -198,25 +195,25 @@ async def predict_sales(request_body: PredictRequest, request: Request):
                         logger.info("  [MATURITY] DB Anchor Hit (Strict Name Match): '%s' at %s", 
                                     request_body.branch_name, postcode)
                         break
-            
-            if not found_anchor:
-                apply_stimulus = True
-                logger.info("  [MATURITY] DB Anchor Miss: Defaulting base to %d days (NEW LOCATION STIMULUS ACTIVE)", base_days_since_open)
 
-    # Apply hardcoded "Pepe's" brand weight for new/unknown locations
-    if apply_stimulus:
-        inferred_brand = "Pepe's"
+    # --- ENSEMBLE CONFIGURATION ---
+    if found_anchor:
+        # Known Location: Average the "Big Three" at real maturity
+        ensemble_brands = ["Maeme's", "Rio's", "Pepe's"]
+        stimulus_per_day = 0.0
+        logger.info("  [ENSEMBLE] Known Location Hit: Averaging %s (Zero Stimulus)", ensemble_brands)
+    else:
+        # New/Unknown Location: Average the top 2 competitors + Surge Stimulus 
+        ensemble_brands = ["Pepe's", "Rio's"]
+        stimulus_per_day = 10500.0 / 7.0  # £1,500/day
+        logger.info("  [ENSEMBLE] New Location Miss: Averaging %s (+£10,500/week Stimulus)", ensemble_brands)
 
-    # 3. Prepare unique high-fidelity feature dicts for every single day
+    # 3. Prepare Multi-Brand Feature Clones for every single day
     pred_features = []
+    # We store the mapping so we can average them later
+    # Format: { date_index: [pred1, pred2, ... ] }
     for d in daily_dates:
-        f_day = features.copy()
-        
-        # Inject Temporal Flags from CalendarUtility
-        temporal_flags = CalendarUtility.get_features_for_date(d, situational)
-        f_day.update(temporal_flags)
-        
-        # --- ROLLING TIME-SERIES MATURITY ---
+        # --- ROLLING TIME-SERIES MATURITY (Shared for all brands in ensemble) ---
         if anchor_date:
             delta_days = (d - anchor_date).days
             rolling_maturity = max(0, base_days_since_open + delta_days)
@@ -224,22 +221,39 @@ async def predict_sales(request_body: PredictRequest, request: Request):
             delta_days = (d - range_start).days
             rolling_maturity = max(0, base_days_since_open + delta_days)
 
-        # Inject Contextual Metadata
-        f_day["Inferred_Brand"] = inferred_brand
-        f_day["Days_Since_Open"] = rolling_maturity
+        for brand in ensemble_brands:
+            f_brand = features.copy()
+            
+            # Inject Temporal Flags from CalendarUtility
+            temporal_flags = CalendarUtility.get_features_for_date(d, situational)
+            f_brand.update(temporal_flags)
+            
+            # Inject Contextual Metadata
+            f_brand["Inferred_Brand"] = brand
+            f_brand["Days_Since_Open"] = rolling_maturity
+            
+            pred_features.append(f_brand)
+
+    # 4. Batch predict all N-brand clones using the V4 Ensemble
+    all_raw_preds = model_service.predict(pred_features)
+
+    # 5. Aggregate: Average the N-brand results back into a single daily timeline
+    num_brands = len(ensemble_brands)
+    raw_preds = []
+    for i in range(len(daily_dates)):
+        # Extract the N predictions for this specific day
+        day_start_idx = i * num_brands
+        day_end_idx = day_start_idx + num_brands
+        day_brand_preds = all_raw_preds[day_start_idx:day_end_idx]
         
-        pred_features.append(f_day)
+        # Calculate the ensemble average for the day
+        daily_avg = sum(day_brand_preds) / num_brands
+        
+        # Apply the New Location Stimulus (if active)
+        final_daily = daily_avg + stimulus_per_day
+        raw_preds.append(final_daily)
 
-    # 4. Batch predict all days using the V4 Ensemble
-    raw_preds = model_service.predict(pred_features)
-
-    # 3.5 Apply New Location Stimulus (Daily injection for 10k/week target)
-    if apply_stimulus:
-        STIMULUS_DAILY = 10000.0 / 7.0
-        raw_preds = [p + STIMULUS_DAILY for p in raw_preds]
-        logger.info("  [STIMULUS] Added £%.2f/day (£10,000/week) to predictions.", STIMULUS_DAILY)
-
-    # 3.6 Apply user-defined inflation if toggled on
+    # 3.6 Apply user-defined inflation if toggled on manually in request
     if request_body.inflate_sales and request_body.inflate_amount:
         WEEKLY_INFLATION = float(request_body.inflate_amount)
         DAILY_INFLATION = WEEKLY_INFLATION / 7.0
