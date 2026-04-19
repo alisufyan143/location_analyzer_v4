@@ -29,12 +29,11 @@ export default function PredictionForm({ onPredict, isLoading }) {
     const [postcode, setPostcode] = useState('')
     const [branchName, setBranchName] = useState('')
 
-    // Date range state — defaults to current month → +1 year
-    const now = new Date()
-    const [fromMonth, setFromMonth] = useState(now.getMonth() + 1)
-    const [fromYear, setFromYear] = useState(now.getFullYear())
-    const [toMonth, setToMonth] = useState(now.getMonth() + 1)
-    const [toYear, setToYear] = useState(now.getFullYear() + 1)
+    // Date range state — hardcoded defaults for 2026 calendar year
+    const [fromMonth, setFromMonth] = useState(1) // January
+    const [fromYear, setFromYear] = useState(2026)
+    const [toMonth, setToMonth] = useState(12)    // December
+    const [toYear, setToYear] = useState(2026)
 
     // Validation: To must be after From
     const fromTotal = fromYear * 12 + fromMonth

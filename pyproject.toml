@@ -48,6 +48,7 @@ dependencies = [
     "statsmodels",
     "joblib",
     "optuna",
+    "pytorch-tabnet",
     
     # Visualization
     "bokeh",
